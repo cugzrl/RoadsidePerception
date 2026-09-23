@@ -1,0 +1,9 @@
+name: roadside_perception
+channels:
+  - defaults
+dependencies:
+  - python=3.9.25
+  - pip=25.2
+  - pip:
+      - -r requirements.pipeline.txt
+

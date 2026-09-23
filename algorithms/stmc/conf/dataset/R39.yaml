@@ -1,0 +1,11 @@
+name: R39
+
+scene_path: scene1
+camera_pattern: "*"
+
+img_path: ./sam3_multi_frames/
+img_ext: jpg
+
+offsets: null
+
+calibration_path: calibration.json

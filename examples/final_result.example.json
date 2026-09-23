@@ -1,0 +1,59 @@
+{
+  "scene_id": "R39_segment0",
+  "fps": 20.0,
+  "feature_provider": "resnet50",
+  "cameras": [
+    {
+      "camera_id": "R39_Aw_CamS",
+      "video_path": "/input/R39_Aw_CamS.mp4",
+      "calibration_path": "/app/configs/cameras/r39/R39_Aw_CamS/calibration.json",
+      "width": 1920,
+      "height": 1080,
+      "source_fps": 60.0,
+      "frame_count": 1200
+    }
+  ],
+  "categories": [
+    {"id": 0, "name": "Car"},
+    {"id": 1, "name": "Van"},
+    {"id": 2, "name": "Bus"},
+    {"id": 3, "name": "Tricycle"},
+    {"id": 4, "name": "ScooterRider"},
+    {"id": 5, "name": "Cyclist"},
+    {"id": 6, "name": "Pedestrian"}
+  ],
+  "frames": [
+    {
+      "camera_id": "R39_Aw_CamS",
+      "frame_index": 0,
+      "timestamp_ms": 0.0,
+      "image_path": "/output/frames/R39_Aw_CamS/000001.jpg",
+      "detections": [
+        {
+          "detection_id": "R39_Aw_CamS:0:0",
+          "class_id": 0,
+          "class_name": "Car",
+          "score": 0.9468,
+          "bbox_xyxy": [100.0, 200.0, 300.0, 400.0],
+          "global_track_id": 1,
+          "world_position": {"x": 12.3, "y": 8.4},
+          "plate": ""
+        }
+      ]
+    }
+  ],
+  "tracks": [
+    {
+      "global_track_id": 1,
+      "class_id": 0,
+      "class_name": "Car",
+      "plate": "",
+      "plate_confidence": null,
+      "start_timestamp_ms": 0.0,
+      "end_timestamp_ms": 0.0,
+      "observation_count": 1,
+      "camera_observation_counts": {"R39_Aw_CamS": 1}
+    }
+  ],
+  "errors": []
+}

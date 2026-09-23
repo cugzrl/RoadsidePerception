@@ -1,0 +1,40 @@
+task: detection
+
+evaluator:
+  type: CocoEvaluator
+  iou_types: [ 'bbox' ]
+
+num_classes: 9 # your dataset classes
+remap_mscoco_category: False
+
+train_dataloader:
+  type: DataLoader
+  dataset:
+    type: CocoDetection
+    img_folder: /home/kemove/devdata1/xy/rd-detr/rddetr_pytorch/data_dair_v2x_i/train
+    ann_file: /home/kemove/devdata1/xy/rd-detr/rddetr_pytorch/data_dair_v2x_i/annotations/instances_train.json
+    return_masks: False
+    transforms:
+      type: Compose
+      ops: ~
+  shuffle: True
+  num_workers: 4
+  drop_last: True
+  collate_fn:
+    type: BatchImageCollateFunction
+
+val_dataloader:
+  type: DataLoader
+  dataset:
+    type: CocoDetection
+    img_folder: /home/kemove/devdata1/xy/rd-detr/rddetr_pytorch/data_dair_v2x_i/test
+    ann_file: /home/kemove/devdata1/xy/rd-detr/rddetr_pytorch/data_dair_v2x_i/annotations/instances_test.json
+    return_masks: False
+    transforms:
+      type: Compose
+      ops: ~
+  shuffle: False
+  num_workers: 4
+  drop_last: False
+  collate_fn:
+    type: BatchImageCollateFunction

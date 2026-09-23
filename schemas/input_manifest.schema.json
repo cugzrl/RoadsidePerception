@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "视频抽帧清单",
+  "type": "object",
+  "required": ["scene_id", "fps", "cameras", "frames"],
+  "properties": {
+    "scene_id": {"type": "string", "minLength": 1},
+    "fps": {"type": "number", "const": 20.0},
+    "cameras": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["camera_id", "video_path", "calibration_path", "width", "height", "frame_count"],
+        "properties": {
+          "camera_id": {"type": "string"},
+          "video_path": {"type": "string"},
+          "calibration_path": {"type": "string"},
+          "width": {"type": "integer", "minimum": 1},
+          "height": {"type": "integer", "minimum": 1},
+          "source_fps": {"type": "number", "exclusiveMinimum": 0},
+          "frame_count": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["camera_id", "frame_index", "timestamp_ms", "image_path"],
+        "properties": {
+          "camera_id": {"type": "string"},
+          "frame_index": {"type": "integer", "minimum": 0},
+          "timestamp_ms": {"type": "number", "minimum": 0},
+          "image_path": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

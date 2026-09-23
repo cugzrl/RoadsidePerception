@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "阶段数据",
+  "$defs": {
+    "bbox": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "number"},
+        {"type": "number"},
+        {"type": "number"},
+        {"type": "number"}
+      ],
+      "items": false
+    },
+    "detection": {
+      "type": "object",
+      "required": ["detection_id", "class_id", "class_name", "score", "bbox_xyxy"],
+      "properties": {
+        "detection_id": {"type": "string"},
+        "class_id": {"type": "integer", "minimum": 0, "maximum": 6},
+        "class_name": {"type": "string"},
+        "score": {"type": "number", "minimum": 0, "maximum": 1},
+        "bbox_xyxy": {"$ref": "#/$defs/bbox"}
+      }
+    }
+  }
+}

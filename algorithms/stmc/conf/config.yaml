@@ -1,0 +1,89 @@
+hydra/hydra_logging: null
+
+defaults:
+  - dataset: R39
+  - encoder: precomputed
+  - _self_
+
+dataset_path: ./data/R39
+output_path: ./outputs/
+
+device: cuda
+
+logging:
+  wandb:
+    enable: false
+    project: ggmc
+    upload_results: false
+    tags: null
+  tensorboard:
+    enable: false
+
+resources:
+  path: ./resources/
+  detector: RDDETR
+  reid: resnet50
+
+visuals:
+  plot_interval: 1
+  plot_results: false
+  plot_ground_truth: false
+  plot_to_tensorboard: false
+  grid_rows: 2
+  store_files: false
+  border_size: 3
+
+solver:
+  backend: PD
+
+tracker:
+  matching:
+    distance_threshold: 8.0
+    rescale_threshold: 0.7
+    reid_decay: 0.7
+    rescale_weight: 0.5
+    distance_weight: 0.5
+  confidence_thresh: 0.5
+  low_confidence_thresh: null
+  patience: 1
+  memory: 40
+  fdim: 2048
+  enable_accumulator: true
+  prematching:
+    enabled: true
+    iou_bias: 0.60
+    iou_threshold: 0.50
+    prune_remaining: false
+
+preprocess:
+  nms_thresh: 0.6
+  roi_filter: false
+  bottom: true
+  min_box_area: 200
+  box_projection_centers:
+    alpha_w: null
+    alpha_h: null
+
+postprocess:
+  expand_boxes:
+    enable: false
+    factor: 1.4
+  remove_borders:
+    enable: false
+    border_size: 5
+  size_filter:
+    enable: false
+    min_size: 6220
+    max_size: 622080
+
+evaluation:
+  inplace: true
+  evaluate_standard: true
+  evaluate_hota: false
+  evaluate_bev: false
+  evaluate_external: true
+
+export_json:
+  enable: true
+  class_metadata_path: null
+  class_match_iou: 0.3

@@ -1,0 +1,56 @@
+# @package _global_
+
+defaults:
+- override /dataset: R39
+- override /encoder: precomputed
+- _self_
+
+dataset_path: ./data/R39
+output_path: ./outputs
+
+resources:
+  path: ./resources
+  detector: RDDETR
+  reid: resnet50
+
+tracker:
+  fdim: 2048
+  confidence_thresh: 0.5
+  low_confidence_thresh: null
+  patience: 1
+  memory: 40
+
+  matching:
+    distance_threshold: 8.0
+    rescale_threshold: 0.7
+    reid_decay: 0.7
+    rescale_weight: 0.5
+  prematching:
+    enabled: true
+    iou_bias: 0.60
+    iou_threshold: 0.50
+    prune_remaining: false
+
+preprocess:
+  nms_thresh: 0.6
+  roi_filter: false
+  min_box_area: 200
+
+export_json:
+  enable: true
+  class_metadata_path: null
+  class_match_iou: 0.3
+
+postprocess:
+  expand_boxes:
+    enable: false
+  remove_borders:
+    enable: false
+  size_filter:
+    enable: false
+
+visuals:
+  plot_results: false
+  plot_ground_truth: false
+  store_files: false
+  plot_interval: 1

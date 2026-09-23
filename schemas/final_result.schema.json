@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "路侧感知结果",
+  "type": "object",
+  "required": ["scene_id", "fps", "feature_provider", "cameras", "categories", "frames", "tracks", "errors"],
+  "properties": {
+    "scene_id": {"type": "string"},
+    "fps": {"type": "number", "const": 20.0},
+    "feature_provider": {"const": "resnet50"},
+    "cameras": {"type": "array", "minItems": 1, "maxItems": 4},
+    "categories": {"type": "array", "minItems": 7, "maxItems": 7},
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["camera_id", "frame_index", "timestamp_ms", "image_path", "detections"],
+        "properties": {
+          "camera_id": {"type": "string"},
+          "frame_index": {"type": "integer", "minimum": 0},
+          "timestamp_ms": {"type": "number", "minimum": 0},
+          "image_path": {"type": "string"},
+          "detections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["detection_id", "class_id", "class_name", "score", "bbox_xyxy", "global_track_id", "world_position", "plate"],
+              "properties": {
+                "detection_id": {"type": "string"},
+                "class_id": {"type": "integer", "minimum": 0, "maximum": 6},
+                "class_name": {"type": "string"},
+                "score": {"type": "number", "minimum": 0, "maximum": 1},
+                "bbox_xyxy": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "number"}},
+                "global_track_id": {"type": ["integer", "null"], "minimum": 1},
+                "world_position": {
+                  "oneOf": [
+                    {"type": "null"},
+                    {
+                      "type": "object",
+                      "required": ["x", "y"],
+                      "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "plate": {"type": "string"}
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "tracks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["global_track_id", "class_id", "class_name", "plate", "plate_confidence", "start_timestamp_ms", "end_timestamp_ms", "observation_count", "camera_observation_counts"],
+        "properties": {
+          "global_track_id": {"type": "integer", "minimum": 1},
+          "class_id": {"type": "integer", "minimum": 0, "maximum": 6},
+          "class_name": {"type": "string"},
+          "plate": {"type": "string"},
+          "plate_confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+          "start_timestamp_ms": {"type": "number", "minimum": 0},
+          "end_timestamp_ms": {"type": "number", "minimum": 0},
+          "observation_count": {"type": "integer", "minimum": 1},
+          "camera_observation_counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "errors": {"type": "array"}
+  },
+  "additionalProperties": false
+}

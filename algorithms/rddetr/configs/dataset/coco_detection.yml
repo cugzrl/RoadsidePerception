@@ -1,0 +1,29 @@
+task: detection
+num_classes: 7
+remap_mscoco_category: True
+train_dataloader:
+  type: DataLoader
+  dataset:
+    type: CocoDetection
+    img_folder: 
+    ann_file: 
+    transforms:
+      type: Compose
+      ops: ~
+  shuffle: True
+  batch_size: 16
+  num_workers: 4
+  drop_last: True
+val_dataloader:
+  type: DataLoader
+  dataset:
+    type: CocoDetection
+    img_folder: /home/kemove/devdata1/RodeTest/dataset/detection_dair_v2x_i/val/
+    ann_file: /home/kemove/devdata1/RodeTest/dataset/detection_dair_v2x_i/annotations/instances_val.json
+    transforms:
+      type: Compose
+      ops: ~
+  shuffle: False
+  batch_size: 32
+  num_workers: 2
+  drop_last: False
