@@ -450,15 +450,19 @@ def draw_trails(
     dot_radius: int = 4,
     fade: bool = True,
     label_scale: float = 0.4,
+    max_step_m: float | None = None,
 ) -> np.ndarray:
     for track_id, xy in trails.items():
         if len(xy) < 2:
             continue
         points = view.to_px(xy)
+        steps = np.linalg.norm(np.diff(np.asarray(xy, dtype=np.float64), axis=0), axis=1)
         color = colors.get(track_id, (200, 200, 200))
         if fade:
             count = len(points)
             for index in range(1, count):
+                if max_step_m is not None and steps[index - 1] > max_step_m:
+                    continue
                 weight = 0.25 + 0.75 * (index / count)
                 faded = tuple(int(channel * weight) for channel in color)
                 cv2.line(
@@ -470,7 +474,16 @@ def draw_trails(
                     cv2.LINE_AA,
                 )
         else:
-            cv2.polylines(image, [np.round(points).astype(np.int32)], False, color, thickness, cv2.LINE_AA)
+            run = [points[0]]
+            for index in range(1, len(points)):
+                if max_step_m is not None and steps[index - 1] > max_step_m:
+                    if len(run) >= 2:
+                        cv2.polylines(image, [np.round(np.stack(run)).astype(np.int32)], False, color, thickness, cv2.LINE_AA)
+                    run = [points[index]]
+                else:
+                    run.append(points[index])
+            if len(run) >= 2:
+                cv2.polylines(image, [np.round(np.stack(run)).astype(np.int32)], False, color, thickness, cv2.LINE_AA)
     if current:
         for track_id, xy in current.items():
             point = view.to_px_int(np.asarray(xy, dtype=np.float64).reshape(1, 2))[0]
