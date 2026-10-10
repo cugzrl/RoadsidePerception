@@ -1,0 +1,334 @@
+{
+  "spatial": {
+    "found": true,
+    "cell_id": 327,
+    "ix": 27,
+    "iy": 5,
+    "bounds_m": [
+      -6.0,
+      -50.0,
+      -4.0,
+      -48.0
+    ],
+    "observation_count": 236,
+    "local_track_count": 18,
+    "clean_track_count": 17,
+    "global_track_count": 17,
+    "class_counts": {
+      "Car": 15,
+      "Pedestrian": 1,
+      "Bus": 1
+    },
+    "direction_hist": {
+      "0° 到 45°，相对路面 +X 轴": 2,
+      "90° 到 135°，相对路面 +X 轴": 9,
+      "270° 到 315°，相对路面 +X 轴": 4
+    },
+    "speed_p50_m_s": 6.7940198959297735,
+    "speed_p90_m_s": 7.919347277265332,
+    "camera_counts": {
+      "R39_Aw_CamS": {
+        "observations": 222,
+        "tracks": 16
+      },
+      "R39_Ce_CamN": {
+        "observations": 14,
+        "tracks": 2
+      }
+    },
+    "observation_reliability": "unknown",
+    "confidence": "high",
+    "source_sequences": [
+      "r39_20250924_070957",
+      "r39_20251021_070024",
+      "r39_20251021_070125",
+      "r39_20251021_070226"
+    ],
+    "next_cells": [
+      {
+        "cell_id": 387,
+        "track_count": 16,
+        "median_dt_ms": 50.0,
+        "confidence": "high"
+      },
+      {
+        "cell_id": 268,
+        "track_count": 9,
+        "median_dt_ms": 50.0,
+        "confidence": "medium"
+      },
+      {
+        "cell_id": 328,
+        "track_count": 9,
+        "median_dt_ms": 50.0,
+        "confidence": "medium"
+      },
+      {
+        "cell_id": 326,
+        "track_count": 2,
+        "median_dt_ms": 50.0,
+        "confidence": "low"
+      },
+      {
+        "cell_id": 267,
+        "track_count": 1,
+        "median_dt_ms": 50.0,
+        "confidence": "low"
+      }
+    ],
+    "coordinate_frame": "road_homography_xy",
+    "query_camera": {
+      "observations": 222,
+      "tracks": 16
+    },
+    "query_class_tracks": 15
+  },
+  "trajectory": {
+    "matches": [
+      {
+        "prototype_id": 0,
+        "kind": "straight",
+        "score": 0.9485130919684117,
+        "mean_point_distance_m": 0.4228774951122368,
+        "support_tracks": 14,
+        "support_sequences": [
+          "r39_20250924_070957",
+          "r39_20251021_070024",
+          "r39_20251021_070125",
+          "r39_20251021_070226"
+        ],
+        "camera_counts": {
+          "R39_Aw_CamS": 13,
+          "R39_Ce_CamN": 1
+        },
+        "median_speed_m_s": 6.752502639985703,
+        "confidence": "high",
+        "exemplar_sequence": "r39_20251021_070024",
+        "exemplar_camera": "R39_Aw_CamS",
+        "exemplar_local_track_id": 6
+      },
+      {
+        "prototype_id": 36,
+        "kind": "left",
+        "score": 0.3931671568924807,
+        "mean_point_distance_m": 7.46816337550517,
+        "support_tracks": 3,
+        "support_sequences": [
+          "r39_20250924_070957",
+          "r39_20251021_070024"
+        ],
+        "camera_counts": {
+          "R39_Ce_CamN": 2,
+          "R39_Ds_CamE": 1
+        },
+        "median_speed_m_s": 0.09790689760225911,
+        "confidence": "medium",
+        "exemplar_sequence": "r39_20250924_070957",
+        "exemplar_camera": "R39_Ce_CamN",
+        "exemplar_local_track_id": 42
+      },
+      {
+        "prototype_id": 19,
+        "kind": "other",
+        "score": 0.24814430857513575,
+        "mean_point_distance_m": 11.149958501066278,
+        "support_tracks": 5,
+        "support_sequences": [
+          "r39_20250924_070957",
+          "r39_20251021_070024",
+          "r39_20251021_070226"
+        ],
+        "camera_counts": {
+          "R39_Ce_CamN": 4,
+          "R39_Ds_CamE": 1
+        },
+        "median_speed_m_s": 3.9944208392452856,
+        "confidence": "medium",
+        "exemplar_sequence": "r39_20251021_070024",
+        "exemplar_camera": "R39_Ce_CamN",
+        "exemplar_local_track_id": 21
+      },
+      {
+        "prototype_id": 25,
+        "kind": "right",
+        "score": 0.24285137969057932,
+        "mean_point_distance_m": 11.322445031684559,
+        "support_tracks": 4,
+        "support_sequences": [
+          "r39_20250924_070957",
+          "r39_20251021_070024",
+          "r39_20251021_070226"
+        ],
+        "camera_counts": {
+          "R39_Ce_CamN": 3,
+          "R39_Ds_CamE": 1
+        },
+        "median_speed_m_s": 1.0162730312999901,
+        "confidence": "medium",
+        "exemplar_sequence": "r39_20251021_070024",
+        "exemplar_camera": "R39_Ce_CamN",
+        "exemplar_local_track_id": 71
+      },
+      {
+        "prototype_id": 27,
+        "kind": "straight",
+        "score": 0.18286988701994877,
+        "mean_point_distance_m": 13.59184303129601,
+        "support_tracks": 4,
+        "support_sequences": [
+          "r39_20250924_070957",
+          "r39_20251021_070226"
+        ],
+        "camera_counts": {
+          "R39_Ce_CamN": 4
+        },
+        "median_speed_m_s": 1.9911649559720264,
+        "confidence": "medium",
+        "exemplar_sequence": "r39_20251021_070226",
+        "exemplar_camera": "R39_Ce_CamN",
+        "exemplar_local_track_id": 69
+      }
+    ],
+    "end_cell": {
+      "found": true,
+      "cell_id": 327,
+      "ix": 27,
+      "iy": 5,
+      "bounds_m": [
+        -6.0,
+        -50.0,
+        -4.0,
+        -48.0
+      ],
+      "observation_count": 236,
+      "local_track_count": 18,
+      "clean_track_count": 17,
+      "global_track_count": 17,
+      "class_counts": {
+        "Car": 15,
+        "Pedestrian": 1,
+        "Bus": 1
+      },
+      "direction_hist": {
+        "0° 到 45°，相对路面 +X 轴": 2,
+        "90° 到 135°，相对路面 +X 轴": 9,
+        "270° 到 315°，相对路面 +X 轴": 4
+      },
+      "speed_p50_m_s": 6.7940198959297735,
+      "speed_p90_m_s": 7.919347277265332,
+      "camera_counts": {
+        "R39_Aw_CamS": {
+          "observations": 222,
+          "tracks": 16
+        },
+        "R39_Ce_CamN": {
+          "observations": 14,
+          "tracks": 2
+        }
+      },
+      "observation_reliability": "unknown",
+      "confidence": "high",
+      "source_sequences": [
+        "r39_20250924_070957",
+        "r39_20251021_070024",
+        "r39_20251021_070125",
+        "r39_20251021_070226"
+      ],
+      "next_cells": [
+        {
+          "cell_id": 387,
+          "track_count": 16,
+          "median_dt_ms": 50.0,
+          "confidence": "high"
+        },
+        {
+          "cell_id": 268,
+          "track_count": 9,
+          "median_dt_ms": 50.0,
+          "confidence": "medium"
+        },
+        {
+          "cell_id": 328,
+          "track_count": 9,
+          "median_dt_ms": 50.0,
+          "confidence": "medium"
+        },
+        {
+          "cell_id": 326,
+          "track_count": 2,
+          "median_dt_ms": 50.0,
+          "confidence": "low"
+        },
+        {
+          "cell_id": 267,
+          "track_count": 1,
+          "median_dt_ms": 50.0,
+          "confidence": "low"
+        }
+      ],
+      "coordinate_frame": "road_homography_xy",
+      "query_camera": {
+        "observations": 222,
+        "tracks": 16
+      }
+    },
+    "cross_camera": [
+      {
+        "camera_a": "R39_Aw_CamS",
+        "camera_b": "R39_Bn_CamW",
+        "relation": "co_observation",
+        "support_count": 8610,
+        "median_distance_m": 3.118651992622664,
+        "median_dt_ms": null,
+        "confidence": "high"
+      },
+      {
+        "camera_a": "R39_Aw_CamS",
+        "camera_b": "R39_Ds_CamE",
+        "relation": "co_observation",
+        "support_count": 5520,
+        "median_distance_m": 2.043459087319736,
+        "median_dt_ms": null,
+        "confidence": "high"
+      },
+      {
+        "camera_a": "R39_Aw_CamS",
+        "camera_b": "R39_Ce_CamN",
+        "relation": "co_observation",
+        "support_count": 3414,
+        "median_distance_m": 2.180864161236534,
+        "median_dt_ms": null,
+        "confidence": "high"
+      },
+      {
+        "camera_a": "R39_Aw_CamS",
+        "camera_b": "R39_Ce_CamN",
+        "relation": "temporal_transfer",
+        "support_count": 8,
+        "median_distance_m": null,
+        "median_dt_ms": 950.0,
+        "confidence": "medium"
+      },
+      {
+        "camera_a": "R39_Bn_CamW",
+        "camera_b": "R39_Aw_CamS",
+        "relation": "temporal_transfer",
+        "support_count": 2,
+        "median_distance_m": null,
+        "median_dt_ms": 1000.0,
+        "confidence": "low"
+      },
+      {
+        "camera_a": "R39_Aw_CamS",
+        "camera_b": "R39_Bn_CamW",
+        "relation": "temporal_transfer",
+        "support_count": 1,
+        "median_distance_m": null,
+        "median_dt_ms": 1050.0,
+        "confidence": "low"
+      }
+    ],
+    "coordinate_frame": "road_homography_xy",
+    "note": "分数由历史路径形状距离换算，同时给出支持轨迹数和可信度，不是未来位置的确定预测"
+  }
+}

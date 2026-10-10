@@ -31,6 +31,12 @@ def load_schema() -> dict[str, Any]:
     return load_yaml(CONFIG_DIR / "schema.yaml")
 
 
+def load_knowledge() -> dict[str, Any]:
+    data = load_yaml(CONFIG_DIR / "knowledge.yaml")
+    data["calibration_dir"] = (PROJECT_ROOT / data["calibration_dir"]).resolve()
+    return data
+
+
 def dataset_root(sources: dict[str, Any], dataset_name: str) -> Path:
     dataset = sources["datasets"][dataset_name]
     link = PROJECT_ROOT / dataset["root_link"]

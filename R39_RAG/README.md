@@ -66,6 +66,18 @@ python -m unittest discover -s R39_RAG/tests -v
 python R39_RAG/scripts/normalize_data.py --sequence r39_20251021_070125
 ```
 
+投影验证和知识库需要 numpy、matplotlib、scikit-learn。本机可使用 `/home/kemove/anaconda3/bin/python`。
+
+```bash
+python R39_RAG/scripts/verify_bev.py --sequence r39_20250924_070957
+python R39_RAG/scripts/verify_bev.py
+python R39_RAG/scripts/build_knowledge.py
+python R39_RAG/scripts/visualize_knowledge.py
+python R39_RAG/scripts/query_knowledge.py demo
+```
+
+`verify_bev.py` 先判断四路单应是否能共用地面坐标。未通过时 `build_knowledge.py` 不会建库。建库序列和留出序列写在 `configs/knowledge.yaml`。
+
 ## 输出
 
 ```text

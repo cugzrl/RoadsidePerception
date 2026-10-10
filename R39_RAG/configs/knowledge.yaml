@@ -1,0 +1,45 @@
+coordinate_frame: road_homography_xy
+calibration_dir: ../configs/cameras/r39
+image_width: 1920
+image_height: 1080
+# 与 algorithms/stmc/src/tracker/geometry.py 的 image_to_world 一致，使用标定矩阵的逆
+homography_convention: stmc_inverse
+ground_point: bbox_bottom_center
+min_denominator: 1.0e-6
+border_px: 4
+max_abs_x_m: 60
+max_abs_y_m: 60
+grid_size_m: 2.0
+grid_min_x: -60
+grid_min_y: -60
+grid_max_x: 60
+grid_max_y: 60
+jump_step_m: 6
+direction_min_step_m: 0.4
+max_transition_gap_frames: 3
+consistent_distance_m: 8
+co_observation_max_gap_m: 8
+transfer_max_gap_s: 2
+transfer_max_step_m: 30
+min_track_points: 8
+min_track_length_m: 8
+prototype_samples: 16
+straight_turn_deg: 25
+turn_deg: 50
+cluster_distance_m: 28
+min_prototype_support: 3
+max_prototypes: 48
+fusion_min_pairs: 4
+fusion_min_pair_count: 50
+fusion_median_limit_m: 8
+build_sequences:
+  - r39_20250924_070957
+  - r39_20251021_070024
+  - r39_20251021_070125
+  - r39_20251021_070226
+holdout_sequences:
+  - r39_20251021_070327
+  - r39_20251021_070428
+verify_example_sequence: r39_20250924_070957
+retrieval_sigma_m: 8
+font_path: /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
