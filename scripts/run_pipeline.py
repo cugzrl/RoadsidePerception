@@ -175,6 +175,21 @@ def main() -> int:
             visualization,
             args.resume,
         )
+        bev_video = output / "bev.mp4"
+        run(
+            [
+                sys.executable,
+                str(SCRIPTS / "visualize_bev.py"),
+                "--result",
+                str(final_result),
+                "--output",
+                str(bev_video),
+                "--still",
+                str(output / "bev_map.png"),
+            ],
+            bev_video,
+            args.resume,
+        )
     print(f"流水线完成{output}")
     return 0
 

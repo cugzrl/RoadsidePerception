@@ -2,7 +2,7 @@
 
 镜像交付请参阅 [打包说明](docs/docker_deploy.md) 和 [接收方部署指南](packaging/README.md)。
 
-流水线支持一到四路视频，固定按20FPS抽帧，依次完成RD-DETR检测、ResNet特征提取、STMC全局跟踪、HyperLPR3车牌识别和JSON导出
+流水线支持一到四路视频，固定按20FPS抽帧，依次完成RD-DETR检测、ResNet特征提取、STMC全局跟踪、HyperLPR3车牌识别、JSON导出和全局 BEV。R39 使用车道图底图，其他场景只画轨迹。
 
 七个类别全部参与跟踪，只对Car、Van、Bus识别车牌
 
@@ -14,6 +14,8 @@
 输出目录/
 ├── result.json
 ├── visualization.mp4
+├── bev.mp4
+├── bev_map.png
 ├── manifest.json
 ├── detections.json
 ├── frames/
@@ -23,13 +25,14 @@
 
 - `result.json`是最终保存算法结果的JSON文件，包含逐帧检测、全局轨迹和车牌结果
 - `visualization.mp4`是多目拼接可视化视频，检测框标签包含类别、全局ID和车牌号
+- `bev.mp4`和`bev_map.png`是 R39 车道级全局 BEV，轨迹使用`world_position`的地面坐标
 - `manifest.json`记录输入视频、相机ID、标定文件、抽帧率和图片数量
 - `frames`按相机保存20FPS抽出的图片
 - `detections.json`保存RD-DETR原始检测结果，没有全局轨迹ID和车牌
 - `features`保存每个检测框对应的ResNet特征和索引信息
 - `tracking`保存STMC输入、中间文件和带全局轨迹ID的`tracking.json`
 
-对于输出的结果只需要查看并使用`result.json`和`visualization.mp4`，其余中间内容用于调试
+对于输出的结果查看`result.json`、`visualization.mp4`和`bev.mp4`，其余中间内容用于调试
 
 ### result.json字段
 

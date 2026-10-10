@@ -73,10 +73,11 @@ python R39_RAG/scripts/verify_bev.py --sequence r39_20250924_070957
 python R39_RAG/scripts/verify_bev.py
 python R39_RAG/scripts/build_knowledge.py
 python R39_RAG/scripts/visualize_knowledge.py
+python R39_RAG/scripts/audit_bev_trust.py
 python R39_RAG/scripts/query_knowledge.py demo
 ```
 
-`verify_bev.py` 先判断四路单应是否能共用地面坐标。未通过时 `build_knowledge.py` 不会建库。建库序列和留出序列写在 `configs/knowledge.yaml`。
+`verify_bev.py` 先判断四路单应是否能共用地面坐标。未通过时 `build_knowledge.py` 不会建库。建库序列和留出序列写在 `configs/knowledge.yaml`。`audit_bev_trust.py` 把这些投影叠到车道图上，给出路面有效范围、跨相机长尾和可信任的位置与相机对。
 
 ## 输出
 
