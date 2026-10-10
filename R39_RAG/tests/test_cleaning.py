@@ -16,6 +16,7 @@ from r39_rag.cleaning.convert import (
     convert_aligned,
     convert_pipeline_result,
     convert_tracks,
+    reassign_duplicate_ids,
     stamp_frame,
 )
 from r39_rag.config import load_categories
@@ -156,9 +157,23 @@ class CleaningTest(unittest.TestCase):
             self.assertTrue(all(row["score"] is None for row in rows))
             self.assertTrue(all(row["world_position"] is None for row in rows))
             self.assertTrue(all(row["sequence_id"] == "r39_demo_a" for row in rows))
-            collision = [row for row in rows if row["local_track_id"] == 8]
-            self.assertEqual(len(collision), 2)
-            self.assertTrue(all("local_id_frame_collision" in row["quality_flags"] for row in collision))
+            kept = next(row for row in rows if row["bbox_xyxy"] == [10.0, 20.0, 30.0, 40.0])
+            moved = next(row for row in rows if row["bbox_xyxy"] == [100.0, 20.0, 140.0, 80.0])
+            self.assertEqual(kept["local_track_id"], 8)
+            self.assertEqual(kept["global_track_id"], 1)
+            self.assertIsNone(kept["raw_local_track_id"])
+            self.assertNotEqual(moved["local_track_id"], 8)
+            self.assertNotIn(moved["local_track_id"], {1, 3, 4, 5})
+            self.assertEqual(moved["raw_local_track_id"], 8)
+            self.assertEqual(moved["raw_global_track_id"], 1)
+            self.assertNotEqual(moved["global_track_id"], kept["global_track_id"])
+            self.assertIn("id_reassigned", moved["quality_flags"])
+            self.assertNotIn("local_id_frame_collision", kept["quality_flags"])
+            self.assertNotIn("local_id_frame_collision", moved["quality_flags"])
+            local_keys = [(row["camera_id"], row["frame_index"], row["local_track_id"]) for row in rows if row["local_track_id"] is not None]
+            global_keys = [(row["camera_id"], row["frame_index"], row["global_track_id"]) for row in rows if row["global_track_id"] is not None]
+            self.assertEqual(len(local_keys), len(set(local_keys)))
+            self.assertEqual(len(global_keys), len(set(global_keys)))
             invalid_rows = [row for row in rows if row["local_track_id"] == 3]
             self.assertIn("invalid_bbox", invalid_rows[0]["quality_flags"])
             self.assertEqual(invalid_rows[0]["bbox_xyxy"], [5.0, 5.0, 5.0, 9.0])
@@ -166,7 +181,8 @@ class CleaningTest(unittest.TestCase):
             self.assertEqual(truck_row["class_name"], "Car")
             self.assertEqual(truck_row["class_id"], 0)
             self.assertEqual(truck_row["class_mapping_status"], "mapped")
-            huge = next(row for row in collision if "geometry_size_implausible" in row["quality_flags"])
+            huge = moved
+            self.assertIn("geometry_size_implausible", huge["quality_flags"])
             self.assertEqual(huge["coordinate_frame"], "unknown")
             self.assertTrue((quarantine / "conflicts.jsonl").exists())
             second = convert_aligned(
@@ -185,6 +201,56 @@ class CleaningTest(unittest.TestCase):
                 quarantine_dir=quarantine,
             )
             self.assertEqual(second["written_observations"], stats["written_observations"])
+            reassignment = json.loads((output / "id_reassignments.jsonl").read_text(encoding="utf-8"))
+            self.assertEqual(reassignment["raw_local_track_id"], 8)
+            self.assertEqual(reassignment["local_track_id"], moved["local_track_id"])
+
+    def test_same_frame_ids_split_and_cross_camera_global_stays_linked(self):
+        rows = [
+            {"camera_id": "A", "frame_index": 0, "local_track_id": 108, "global_track_id": 2, "bbox_xyxy": [710, 118, 745, 146]},
+            {"camera_id": "A", "frame_index": 0, "local_track_id": 108, "global_track_id": 2, "bbox_xyxy": [721, 98, 751, 122]},
+            {"camera_id": "A", "frame_index": 0, "local_track_id": 108, "global_track_id": 2, "bbox_xyxy": [687, 100, 712, 122]},
+            {"camera_id": "A", "frame_index": 1, "local_track_id": 108, "global_track_id": 2, "bbox_xyxy": [711, 119, 746, 147]},
+            {"camera_id": "A", "frame_index": 1, "local_track_id": 108, "global_track_id": 2, "bbox_xyxy": [722, 99, 752, 123]},
+            {"camera_id": "A", "frame_index": 1, "local_track_id": 108, "global_track_id": 2, "bbox_xyxy": [688, 101, 713, 123]},
+            {"camera_id": "B", "frame_index": 0, "local_track_id": 7, "global_track_id": 2, "bbox_xyxy": [10, 10, 40, 40]},
+            {"camera_id": "A", "frame_index": 0, "local_track_id": 3, "global_track_id": 9, "bbox_xyxy": [1, 1, 4, 4]},
+        ]
+        reassignments, stats = reassign_duplicate_ids(rows)
+        self.assertEqual(stats["local_id_collision_groups"], 1)
+        self.assertEqual(stats["global_id_collision_groups"], 1)
+        self.assertEqual(len(reassignments), 2)
+        by_box = {tuple(row["bbox_xyxy"]): row for row in rows}
+        kept = by_box[(687, 100, 712, 122)]
+        self.assertEqual(kept["local_track_id"], 108)
+        self.assertEqual(kept["global_track_id"], 2)
+        self.assertIsNone(kept["raw_local_track_id"])
+        moved_ids = set()
+        for box in ((710, 118, 745, 146), (721, 98, 751, 122)):
+            row = by_box[box]
+            self.assertEqual(row["raw_local_track_id"], 108)
+            self.assertEqual(row["raw_global_track_id"], 2)
+            self.assertNotEqual(row["local_track_id"], 108)
+            self.assertNotEqual(row["global_track_id"], 2)
+            moved_ids.add((row["local_track_id"], row["global_track_id"]))
+        self.assertEqual(len(moved_ids), 2)
+        continued = by_box[(688, 101, 713, 123)]
+        self.assertEqual(continued["local_track_id"], 108)
+        self.assertEqual(continued["global_track_id"], 2)
+        other_camera = next(row for row in rows if row["camera_id"] == "B")
+        self.assertEqual(other_camera["local_track_id"], 7)
+        self.assertEqual(other_camera["global_track_id"], 2)
+        self.assertIsNone(other_camera["raw_global_track_id"])
+        untouched = next(row for row in rows if row["local_track_id"] == 3)
+        self.assertEqual(untouched["global_track_id"], 9)
+        local_keys = [(row["camera_id"], row["frame_index"], row["local_track_id"]) for row in rows]
+        global_keys = [(row["camera_id"], row["frame_index"], row["global_track_id"]) for row in rows]
+        self.assertEqual(len(local_keys), len(set(local_keys)))
+        self.assertEqual(len(global_keys), len(set(global_keys)))
+        used_local = {row["local_track_id"] for row in rows if row["camera_id"] == "A"}
+        self.assertTrue(used_local.isdisjoint({7}))
+        new_globals = {pair[1] for pair in moved_ids}
+        self.assertTrue(new_globals.isdisjoint({2, 9}))
 
     def test_manual_gid_does_not_drop_original(self):
         categories = load_categories()

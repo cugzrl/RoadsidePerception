@@ -135,6 +135,7 @@ def inspect_sources() -> dict[str, Any]:
                 "frame_caches": caches,
                 "manual": manual,
                 "include_detr": sequence.get("include_detr", False),
+                "excluded_note": sequence.get("excluded_note"),
                 "has_historical_calibration": bool(files.get("calibration") and files["calibration"] and files["calibration"].exists()),
                 "header_excerpt": head,
             }

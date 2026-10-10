@@ -3,7 +3,7 @@ schema_version: r39_rag.v1
 observation_fields:
   - {name: site_id, type: string, nullable: false, description: 路口编号}
   - {name: sequence_id, type: string, nullable: false, description: 视频序列编号，按照时间编号}
-  - {name: source_version, type: string, nullable: false, description: 同一序列上的处理版本，例如sam3_aligned、sam3_manual_gid、detr_car}
+  - {name: source_version, type: string, nullable: false, description: 同一序列上的处理版本，例如 sam3_aligned、sam3_manual_gid}
   - {name: camera_id, type: string, nullable: false, description: 摄像头编号，如R39_Aw_CamS}
   - {name: frame_index, type: int, nullable: false, description: 抽帧后的帧编号，从0开始}
   - {name: source_frame_index, type: int, nullable: true, description: 估计的原始视频帧号}
@@ -11,8 +11,10 @@ observation_fields:
   - {name: timestamp_estimated, type: bool, nullable: false, description: timestamp_ms是否由帧率与抽帧步长估计}
   - {name: timebase_source, type: string, nullable: false, description: 时间计算依据}
   - {name: global_timestamp_ms, type: float, nullable: true, description: 绝对采集时间}
-  - {name: local_track_id, type: int, nullable: true, description: 单摄像头局部轨迹ID。检测框没有轨迹时为空}
-  - {name: global_track_id, type: int, nullable: true, description: 当前版本采用的全局ID，只在所在序列本版本内有效}
+  - {name: local_track_id, type: int, nullable: true, description: 清洗后的单摄像头局部轨迹ID。同一相机同一帧不重复，检测框没有轨迹时为空}
+  - {name: raw_local_track_id, type: int, nullable: true, description: 拆分前的局部ID。未改写时为空}
+  - {name: global_track_id, type: int, nullable: true, description: 清洗后的全局ID，只在所在序列本版本内有效。同一相机同一帧不重复}
+  - {name: raw_global_track_id, type: int, nullable: true, description: 拆分前的全局ID。未改写时为空}
   - {name: original_global_track_id, type: int, nullable: true, description: 人工修正前的全局ID。没有修正版本时为空}
   - {name: class_name, type: string, nullable: true, description: 目标类别名}
   - {name: class_name_raw, type: string, nullable: true, description: 原始类别字符串}
@@ -38,8 +40,10 @@ tracklet_fields:
   - {name: sequence_id, type: string, nullable: false, description: 采集序列}
   - {name: source_version, type: string, nullable: false, description: 数据版本}
   - {name: camera_id, type: string, nullable: false, description: 单摄像头轨迹所属相机}
-  - {name: local_track_id, type: int, nullable: false, description: 局部轨迹ID}
-  - {name: global_track_id, type: int, nullable: true, description: 该局部轨迹对应的全局ID。同轨迹出现多个全局ID时为空并记冲突}
+  - {name: local_track_id, type: int, nullable: false, description: 清洗后的局部轨迹ID，同一相机内不重复}
+  - {name: raw_local_track_id, type: int, nullable: true, description: 拆分前的局部ID。未改写时为空}
+  - {name: global_track_id, type: int, nullable: true, description: 该局部轨迹对应的清洗后全局ID。同轨迹出现多个全局ID时为空并记冲突}
+  - {name: raw_global_track_id, type: int, nullable: true, description: 拆分前的全局ID。未改写时为空}
   - {name: original_global_track_id, type: int, nullable: true, description: 修正前全局ID}
   - {name: class_name, type: string, nullable: true, description: 轨迹类别。多个原始类别并存时取首次出现的映射结果，并打标记}
   - {name: class_name_raw, type: string, nullable: true, description: 首次出现的原始类别}
@@ -57,7 +61,8 @@ tracklet_fields:
 global_track_fields:
   - {name: sequence_id, type: string, nullable: false, description: 采集序列}
   - {name: source_version, type: string, nullable: false, description: 数据版本}
-  - {name: global_track_id, type: int, nullable: false, description: 本序列本版本内的全局ID}
+  - {name: global_track_id, type: int, nullable: false, description: 清洗后的全局ID，本序列本版本内不重复}
+  - {name: raw_global_track_id, type: int, nullable: true, description: 拆分前的全局ID。这条全局轨迹不是从重复ID拆出来时为空}
   - {name: class_name, type: string, nullable: true, description: 全局轨迹类别。类别冲突时仍保留首次类别并打标记}
   - {name: class_names_raw, type: "string[]", nullable: false, description: 关联到的原始类别集合}
   - {name: camera_ids, type: "string[]", nullable: false, description: 出现过的相机}

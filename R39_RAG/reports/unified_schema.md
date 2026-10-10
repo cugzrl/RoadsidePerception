@@ -12,7 +12,7 @@
 
 ### source_version
 
-同一序列上的一种处理结果。`sam3_aligned` 来自对齐后的像素框和相机三维框，`sam3_manual_gid` 来自单相机轨迹并采用人工修正后的全局 ID，`detr_car` 来自只检测 car 的 DETR 结果，`roadside_pipeline` 预留给现有 `result.json`。不同版本不会互相覆盖。
+同一序列上的一种处理结果。`sam3_aligned` 来自对齐后的像素框和相机三维框，`sam3_manual_gid` 来自单相机轨迹并采用人工修正后的全局 ID，`roadside_pipeline` 预留给现有 `result.json`。不同版本不会互相覆盖。
 
 ### frame_index
 
@@ -38,7 +38,7 @@
 
 ### coordinate_frame
 
-- `unknown`：`camera_box_3d` 的长宽中位数约十几米到几十米，高度多为类别假定值，不能当成真实车体尺寸或统一世界坐标
+- `unknown`：`camera_box_3d` 的长宽大量偏离正常车辆，例如 Car 出现 length=132.73、width=36.77、height=1.50。该三维尺寸字段保留用于追溯，不用于后续知识库构建
 - `unverified_assumed_ground_plane`：SAM3 轨迹里的 `ground_point_3d`，z 被假定为 0，原点、轴向和单位都没有在本轮核实
 - `road_homography_xy`：现有工程用单应矩阵得到的路面坐标
 - `null`：这条观测没有三维或路面坐标
@@ -55,36 +55,38 @@
 | --- | --- | --- | --- |
 | `site_id` | string | 否 | 路口编号 |
 | `sequence_id` | string | 否 | 视频序列编号，按照时间编号 |
-| `source_version` | string | 否 | 同一序列上的处理版本，例如sam3_aligned、sam3_manual_gid、detr_car |
+| `source_version` | string | 否 | 同一序列上的处理版本，例如 sam3_aligned、sam3_manual_gid |
 | `camera_id` | string | 否 | 摄像头编号，如R39_Aw_CamS |
 | `frame_index` | int | 否 | 抽帧后的帧编号，从0开始 |
-| `source_frame_index` | int | 是 | 估计的原始视频帧号。无法确认抽帧起点时为空 |
+| `source_frame_index` | int | 是 | 估计的原始视频帧号 |
 | `timestamp_ms` | float | 是 | 序列内相对时间，单位毫秒 |
 | `timestamp_estimated` | bool | 否 | timestamp_ms是否由帧率与抽帧步长估计 |
-| `timebase_source` | string | 否 | 时间计算依据。估计失败时为unavailable |
-| `global_timestamp_ms` | float | 是 | 绝对采集时间。目录名未核实，历史数据中保持为空 |
-| `local_track_id` | int | 是 | 单摄像头局部轨迹ID。检测框没有轨迹时为空 |
-| `global_track_id` | int | 是 | 当前版本采用的全局ID，只在所在序列本版本内有效 |
+| `timebase_source` | string | 否 | 时间计算依据 |
+| `global_timestamp_ms` | float | 是 | 绝对采集时间 |
+| `local_track_id` | int | 是 | 清洗后的单摄像头局部轨迹ID。同一相机同一帧不重复，检测框没有轨迹时为空 |
+| `raw_local_track_id` | int | 是 | 拆分前的局部ID。未改写时为空 |
+| `global_track_id` | int | 是 | 清洗后的全局ID，只在所在序列本版本内有效。同一相机同一帧不重复 |
+| `raw_global_track_id` | int | 是 | 拆分前的全局ID。未改写时为空 |
 | `original_global_track_id` | int | 是 | 人工修正前的全局ID。没有修正版本时为空 |
 | `class_name` | string | 是 | 目标类别名 |
 | `class_name_raw` | string | 是 | 原始类别字符串 |
 | `class_id` | int | 是 | 目标类别编号。未映射时为空 |
-| `class_mapping_status` | string | 否 | mapped 或 unmapped |
-| `score` | float | 是 | 检测置信度。原始记录没有该字段时为空，不填 1.0 |
-| `bbox_xyxy` | float[4] | 是 | 图像像素框 [x1, y1, x2, y2]。没有二维框时为空 |
-| `pixel_centroid` | float[2] | 是 | 像素质心 [x, y]。原始记录没有时为空 |
-| `world_position` | object | 是 | 已确认含义的路面坐标。坐标系未核实的三维点不写入此字段 |
-| `coordinate_frame` | string | 是 | world_position 或几何的坐标系名称。未知时为 unknown 或 unverified_assumed_ground_plane，没有几何时为空 |
-| `geometry_3d` | object | 是 | 原始三维信息的紧凑保留，不含八个角点。角点仍在原始文件中 |
-| `source_file` | string | 否 | 相对 data/raw 或配置根的原始文件路径 |
+| `class_mapping_status` | string | 否 | 类别映射mapped或unmapped |
+| `score` | float | 是 | 检测置信度。原始记录没有该字段时为空 |
+| `bbox_xyxy` | float[4] | 是 | 图像像素框[x1, y1, x2, y2]。没有二维框时为空 |
+| `pixel_centroid` | float[2] | 是 | 像素中心[x, y]。原始记录没有时为空 |
+| `world_position` | object | 是 | 路面坐标 |
+| `coordinate_frame` | string | 是 | world_position或几何的坐标系名称 |
+| `geometry_3d` | object | 是 | 原始三维信息 |
+| `source_file` | string | 否 | 相对data/raw或配置根的原始文件路径 |
 | `source_record_index` | int | 否 | 原始文件中的记录序号，用于回溯 |
-| `record_uid` | string | 否 | 序列、版本、相机、帧、局部 ID 与同帧序号组成的观测标识 |
-| `quality_flags` | string[] | 否 | 质量标记。空列表表示本条没有触发规则 |
-| `manual_fix` | bool | 否 | 全局 ID 是否相对自动关联结果被人工修改 |
-| `source_label` | string | 是 | 原始 label，例如 car:10 |
-| `appearance_ref` | object | 是 | 外观特征文件中的索引。本轮不复制特征向量 |
-| `detection_id` | string | 是 | 现有流水线检测框编号。历史 JSON 没有该字段时为空 |
-| `plate` | string | 是 | 车牌号。历史 JSON 与未识别时为空 |
+| `record_uid` | string | 否 | 序列、版本、相机、帧、局部ID与同帧序号组成的观测标识 |
+| `quality_flags` | string[] | 否 | 质量标记 |
+| `manual_fix` | bool | 否 | 全局ID是否相对自动关联结果被人工修改 |
+| `source_label` | string | 是 | 原始label，例如 car:10 |
+| `appearance_ref` | object | 是 | 外观特征文件中的索引 |
+| `detection_id` | string | 是 | 现有流水线检测框编号。历史JSON没有该字段时为空 |
+| `plate` | string | 是 | 车牌号。历史JSON与未识别时为空 |
 
 ## 局部轨迹
 
@@ -95,9 +97,11 @@
 | `sequence_id` | string | 否 | 采集序列 |
 | `source_version` | string | 否 | 数据版本 |
 | `camera_id` | string | 否 | 单摄像头轨迹所属相机 |
-| `local_track_id` | int | 否 | 局部轨迹 ID |
-| `global_track_id` | int | 是 | 该局部轨迹对应的全局 ID。同轨迹出现多个全局 ID 时为空并记冲突 |
-| `original_global_track_id` | int | 是 | 修正前全局 ID |
+| `local_track_id` | int | 否 | 清洗后的局部轨迹ID，同一相机内不重复 |
+| `raw_local_track_id` | int | 是 | 拆分前的局部ID。未改写时为空 |
+| `global_track_id` | int | 是 | 该局部轨迹对应的清洗后全局ID。同轨迹出现多个全局ID时为空并记冲突 |
+| `raw_global_track_id` | int | 是 | 拆分前的全局ID。未改写时为空 |
+| `original_global_track_id` | int | 是 | 修正前全局ID |
 | `class_name` | string | 是 | 轨迹类别。多个原始类别并存时取首次出现的映射结果，并打标记 |
 | `class_name_raw` | string | 是 | 首次出现的原始类别 |
 | `class_id` | int | 是 | 映射后的类别编号 |
@@ -106,7 +110,7 @@
 | `start_timestamp_ms` | float | 是 | 起始帧相对时间 |
 | `end_timestamp_ms` | float | 是 | 结束帧相对时间 |
 | `observation_count` | int | 否 | 框记录数，不是起止帧差加一 |
-| `unique_frame_count` | int | 否 | 去重后的帧数。同一帧多个框时小于 observation_count |
+| `unique_frame_count` | int | 否 | 去重后的帧数 |
 | `source_files` | string[] | 否 | 来源文件 |
 | `quality_flags` | string[] | 否 | 轨迹级质量标记 |
 | `manual_fix` | bool | 否 | 是否包含人工修正 |
@@ -119,19 +123,20 @@
 | --- | --- | --- | --- |
 | `sequence_id` | string | 否 | 采集序列 |
 | `source_version` | string | 否 | 数据版本 |
-| `global_track_id` | int | 否 | 本序列本版本内的全局 ID |
+| `global_track_id` | int | 否 | 清洗后的全局ID，本序列本版本内不重复 |
+| `raw_global_track_id` | int | 是 | 拆分前的全局ID。这条全局轨迹不是从重复ID拆出来时为空 |
 | `class_name` | string | 是 | 全局轨迹类别。类别冲突时仍保留首次类别并打标记 |
 | `class_names_raw` | string[] | 否 | 关联到的原始类别集合 |
 | `camera_ids` | string[] | 否 | 出现过的相机 |
-| `local_track_ids` | string[] | 否 | 相机与局部 ID 的对应，格式 camera:local_id |
+| `local_track_ids` | string[] | 否 | 相机与局部ID的对应，格式camera:local_id |
 | `start_frame` | int | 否 | 已观测最小帧 |
 | `end_frame` | int | 否 | 已观测最大帧 |
 | `start_timestamp_ms` | float | 是 | 起始相对时间 |
 | `end_timestamp_ms` | float | 是 | 结束相对时间 |
 | `observation_count` | int | 否 | 框记录数 |
-| `unique_frame_count` | int | 否 | 跨相机按帧编号去重后的数量，不表示已经证明时钟同步 |
+| `unique_frame_count` | int | 否 | 跨相机按帧编号去重后的数量 |
 | `camera_observation_counts` | object | 否 | 各相机框数量 |
-| `original_global_track_ids` | int[] | 否 | 合并进来的修正前全局 ID |
+| `original_global_track_ids` | int[] | 否 | 合并进来的修正前全局ID |
 | `source_files` | string[] | 否 | 来源文件 |
 | `quality_flags` | string[] | 否 | 全局轨迹质量标记 |
 | `manual_fix` | bool | 否 | 组成该全局轨迹的局部轨迹是否存在人工修正 |
@@ -142,7 +147,8 @@
 - `class_unmapped`：原始类别不能对应七类标准名
 - `invalid_bbox`：框为空、零面积或左右上下颠倒
 - `bbox_out_of_frame`：框超出图像宽高
-- `local_id_frame_collision`：同一局部 ID 在同一帧有多套不同的框
+- `id_reassigned`：同一相机同一帧的重复 ID 已拆开。新编号写在 `local_track_id` 或 `global_track_id`，原编号留在 `raw_local_track_id`、`raw_global_track_id`
+- `local_id_frame_collision`：拆分后仍有同一局部 ID 在同一帧对应多个框，按未解决冲突保留
 - `geometry_size_implausible`：三维长大于 12 米、宽大于 3.5 米，或长宽为 0
 - `geometry_range_suspect`：平面坐标绝对值大于 150
 - `missing_global_id`：没有可用的全局 ID

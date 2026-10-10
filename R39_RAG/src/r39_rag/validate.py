@@ -60,6 +60,9 @@ def validate_normalized() -> dict[str, Any]:
             observations = version_dir / "observations.jsonl"
             count = 0
             seen_uid = set()
+            seen_local = set()
+            seen_global = set()
+            duplicate_reports = 0
             for line_number, row in _iter_jsonl(observations):
                 count += 1
                 checked += 1
@@ -88,6 +91,18 @@ def validate_normalized() -> dict[str, Any]:
                     errors.append(f"{observations}:{line_number} 类别映射不符合约定 {row['class_name_raw']}")
                 if row["class_name_raw"] == "id" and row["class_id"] is not None:
                     errors.append(f"{observations}:{line_number} 占位类别 id 被写入了 class_id")
+                if row["local_track_id"] is not None:
+                    local_key = (row["camera_id"], row["frame_index"], row["local_track_id"])
+                    if local_key in seen_local and duplicate_reports < 8:
+                        errors.append(f"{observations}:{line_number} 局部 ID 在同一帧重复 {local_key}")
+                        duplicate_reports += 1
+                    seen_local.add(local_key)
+                if row["global_track_id"] is not None:
+                    global_key = (row["camera_id"], row["frame_index"], row["global_track_id"])
+                    if global_key in seen_global and duplicate_reports < 8:
+                        errors.append(f"{observations}:{line_number} 全局 ID 在同一帧重复 {global_key}")
+                        duplicate_reports += 1
+                    seen_global.add(global_key)
             expected = metadata["versions"][version]["written_observations"]
             if count != expected:
                 errors.append(f"{sequence_id}/{version} 行数 {count} 与记录 {expected} 不一致")

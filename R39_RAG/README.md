@@ -39,7 +39,7 @@ R39_RAG/
 
 | sequence_id | 位置 | 说明 |
 | --- | --- | --- |
-| r39_20250924_070957 | result/20250924_070957 | 对齐框，另有DETR和ResNet特征 |
+| r39_20250924_070957 | result/20250924_070957 | 对齐框。目录内 DETR 与 ResNet 为本地补充，已忽略 |
 | r39_20251021_070024 | result/20251021_070024 | 对齐框 |
 | r39_20251021_070125 | R39_new/0 | 轨迹加人工全局ID |
 | r39_20251021_070226 | R39_new/1 | 同上 |
@@ -74,6 +74,7 @@ data/normalized/sequences/<sequence_id>/metadata.json
 data/normalized/sequences/<sequence_id>/versions/<source_version>/observations.jsonl
 data/normalized/sequences/<sequence_id>/versions/<source_version>/tracklets.jsonl
 data/normalized/sequences/<sequence_id>/versions/<source_version>/global_tracks.jsonl
+data/normalized/sequences/<sequence_id>/versions/<source_version>/id_reassignments.jsonl
 ```
 
 字段说明见 `reports/unified_schema.md`。现有流水线的 `result.json` 可由 `roadside_pipeline` 适配器读取，本轮原始目录中没有这种文件。
@@ -83,9 +84,9 @@ data/normalized/sequences/<sequence_id>/versions/<source_version>/global_tracks.
 - 目录名里的日期时间没有独立时钟佐证，`capture_start_time` 为空
 - 采样时间按60 FPS和抽帧步长3估计，并假设起点是第0帧
 - 四路相机采样模式一致，曝光同步尚未验证
-- `camera_box_3d` 的长宽不符合普通车辆尺寸，坐标系标记为 `unknown`
-- 轨迹地面点使用假定z=0，不写入 `world_position`
-- 同一局部ID在同一帧可能对应多个不同的框
+- `camera_box_3d` 的长宽不符合普通车辆尺寸，例如 Car 的 length=132.73、width=36.77、height=1.50。`geometry_3d.size_lwh` 只保留追溯，不用于后续知识库
+- 轨迹地面点使用假定 z=0，不写入 `world_position`
+- 同一相机同一帧的重复 ID 会拆成不同目标。观测最多、位置更靠左的一条保留原 ID，其余使用尚未占用的新 ID。其他相机若共用该全局 ID，同帧冲突的目标一起改号，没有冲突的跨相机关联保留原全局 ID。原编号在 `raw_local_track_id` 和 `raw_global_track_id`
 - `truck` 映射为 Car，`motorcycle` 映射为ScooterRider，`bicycle` 映射为Cyclist，原始类别仍保留在 `class_name_raw`
 - 占位类别 `id` 无法对应七类，保持原名且 `class_id` 为空
 - `split_config.yaml` 与视频帧率冲突，不作为时间依据

@@ -27,9 +27,9 @@
 | `20250924_070957/box_info/aligned_pixel_bbox.json` | 42.05 MB | 逐帧像素框 |
 | `20250924_070957/box_info/projected_pixel_bbox.json` | 211.84 MB | 三维框投影回像素 |
 | `20250924_070957/calib.json` | 0.00 MB | 历史相机标定 |
-| `20250924_070957/detr_result/detections.json` | 52.13 MB | DETR 逐帧检测 |
-| `20250924_070957/detr_result/detections_coco.json` | 22.80 MB | DETR 的 COCO 导出 |
-| `20250924_070957/detr_result/failures.json` | 0.00 MB | 检测失败记录 |
+| `20250924_070957/detr_result/detections.json` | 52.13 MB | DETR 逐帧检测，本地补充，不纳入清洗 |
+| `20250924_070957/detr_result/detections_coco.json` | 22.80 MB | DETR 的 COCO 导出，本地补充，不纳入清洗 |
+| `20250924_070957/detr_result/failures.json` | 0.00 MB | 检测失败记录，本地补充，不纳入清洗 |
 | `20250924_070957/raw_video/R39_Aw_CamS/R39_Aw_CamS.mp4` | 50.71 MB | .mp4 |
 | `20250924_070957/raw_video/R39_Aw_CamS/sam3_multi_frames/frame_cache_meta.json` | 0.00 MB | 抽帧元数据 |
 | `20250924_070957/raw_video/R39_Bn_CamW/R39_Bn_CamW.mp4` | 58.89 MB | .mp4 |
@@ -38,7 +38,7 @@
 | `20250924_070957/raw_video/R39_Ce_CamN/sam3_multi_frames/frame_cache_meta.json` | 0.00 MB | 抽帧元数据 |
 | `20250924_070957/raw_video/R39_Ds_CamE/R39_Ds_CamE.mp4` | 51.56 MB | .mp4 |
 | `20250924_070957/raw_video/R39_Ds_CamE/sam3_multi_frames/frame_cache_meta.json` | 0.00 MB | 抽帧元数据 |
-| `20250924_070957/resnet_result/feature_metadata.json` | 73.82 MB | ResNet50 特征索引 |
+| `20250924_070957/resnet_result/feature_metadata.json` | 73.82 MB | ResNet50 特征索引，本地补充，不纳入清洗 |
 | `20250924_070957/result_data/multi_view_global_ids.mp4` | 125.24 MB | .mp4 |
 | `20251021_070024/box_info/aligned_bbox_info.json` | 120.57 MB | 像素框与相机框合并文件 |
 | `20251021_070024/box_info/aligned_camera_bbox.json` | 89.34 MB | 相机三维框 |
@@ -222,7 +222,7 @@
 | `id` | 74 |
 | `truck` | 45 |
 
-该序列另外包含 DETR car 检测和 ResNet50 特征索引，作为 `detr_car` 版本，不与 SAM3 轨迹合并。
+detr_result 与 resnet_result 是本地补充的检测和外观特征，不是甲方结构化数据，不进入统一结果
 
 ### r39_20251021_070024
 
@@ -296,7 +296,7 @@
 
 类型 D 是现有流水线 `result.json`。本次原始目录里没有这种结果，适配器已能读取仓库中的示例结构。
 
-DETR `detections.json` 只有 car，有置信度和 `bbox_xyxy`，没有轨迹 ID。`detections_coco.json` 使用 COCO 的 xywh，不单独再转一份观测。`feature_metadata.json` 只保存特征索引，不复制 `.npy`。
+`20250924_070957/detr_result` 和 `resnet_result` 是本地补充的检测与特征，不是甲方结构化数据。盘点时能看到这些文件，清洗时忽略，不写入 `data/normalized`。
 
 ## 时间与视频
 
@@ -308,13 +308,13 @@ R39_new 说明文字要求按 10 Hz 抽帧，`split_config.yaml` 写了 100 ms �
 
 ## 版本关系
 
-`result/20250924_070957` 与 `result/20251021_070024` 各有一套对齐框。20250924 还有 DETR 和 ResNet 特征。`aligned_pixel_bbox.json`、`aligned_camera_bbox.json` 是合并文件的拆分，投影文件是派生结果。
+`result/20250924_070957` 与 `result/20251021_070024` 各有一套对齐框。20250924 目录里的 DETR 和 ResNet 是本地补充，不纳入统一结果。`aligned_pixel_bbox.json`、`aligned_camera_bbox.json` 是合并文件的拆分，投影文件是派生结果。
 
 R39_new 的 0、1、2、3 不是 20251021_070024 的重复处理。它们的原始序列目录分别是 `20251021_070125`、`070226`、`070327`、`070428`，视频文件大小也不同。每个目录里的自动全局 ID、人工全局 ID、文本映射和轨迹框属于同一段视频的不同版本。
 
 ## 未核实关系
 
-- possible_consecutive_20251021（unverified）：`r39_20251021_070024`、`r39_20251021_070125`、`r39_20251021_070226`、`r39_20251021_070327`、`r39_20251021_070428`。目录时间大约每 61 秒一段，且每段原始视频时长 60 秒。没有独立时间戳或画面对齐证据，各段保持独立序列
+- possible_consecutive_20251021（unverified）：`r39_20251021_070024`、`r39_20251021_070125`、`r39_20251021_070226`、`r39_20251021_070327`、`r39_20251021_070428`。目录时间大约每61秒一段，且每段原始视频时长60秒。没有独立时间戳或画面对齐证据，各段保持独立序列
 
 `R39_new/multi_view_global_ids.mp4` 无法被 ffprobe 读取。`result/20251021_070024/raw_video` 下还有一份与子目录同名的视频拷贝，大小相同但不是同一 inode，清洗使用子目录中的文件。
 

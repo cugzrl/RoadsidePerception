@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from r39_rag.cleaning.convert import build_timebase, convert_aligned, convert_detr, convert_tracks
+from r39_rag.cleaning.convert import build_timebase, convert_aligned, convert_tracks
 from r39_rag.config import PROJECT_ROOT, load_categories, load_sources, sequence_files
 from r39_rag.utils.json_stream import dump_json, load_json
 from r39_rag.utils.video import probe_video
@@ -107,17 +108,13 @@ def normalize_all(sequence_ids: set[str] | None = None) -> dict[str, Any]:
                 quarantine_dir=quarantine / sequence_id / "sam3_aligned",
             )
             if sequence.get("include_detr"):
-                print(f"开始清洗 {sequence_id} / detr_car")
-                versions["detr_car"] = convert_detr(
-                    site_id=sources["site_id"],
-                    sequence_id=sequence_id,
-                    source_version="detr_car",
-                    files=files,
-                    categories=categories,
-                    timebase=timebase,
-                    output_dir=normalized / "sequences" / sequence_id / "versions" / "detr_car",
-                    quarantine_dir=quarantine / sequence_id / "detr_car",
-                )
+                raise RuntimeError(f"{sequence_id} 仍要求纳入 detr，但该结果已约定忽略")
+            for stale in (
+                normalized / "sequences" / sequence_id / "versions" / "detr_car",
+                quarantine / sequence_id / "detr_car",
+            ):
+                if stale.exists():
+                    shutil.rmtree(stale)
         else:
             versions["sam3_manual_gid"] = convert_tracks(
                 site_id=sources["site_id"],

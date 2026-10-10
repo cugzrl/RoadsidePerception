@@ -140,6 +140,214 @@ def _apply_class(raw_name: str | None, categories: dict[str, Any]) -> tuple[str 
     return apply_category(raw_name, categories["mappings"])
 
 
+def _center(bbox: Any) -> tuple[float, float] | None:
+    if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+        return None
+    return ((float(bbox[0]) + float(bbox[2])) / 2.0, (float(bbox[1]) + float(bbox[3])) / 2.0)
+
+
+def _as_int(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _source_local_id(row: dict[str, Any]) -> int | None:
+    raw = _as_int(row.get("raw_local_track_id"))
+    if raw is not None:
+        return raw
+    return _as_int(row.get("local_track_id"))
+
+
+def reassign_duplicate_ids(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """同一相机同一帧出现多个位置时拆成不同 ID，其他相机上的同一全局 ID 一起改"""
+    for row in rows:
+        row["raw_local_track_id"] = None
+        row["raw_global_track_id"] = None
+
+    used_local: dict[str, set[int]] = defaultdict(set)
+    used_global: set[int] = set()
+    for row in rows:
+        local_id = _as_int(row.get("local_track_id"))
+        camera_id = row.get("camera_id")
+        if local_id is not None and camera_id is not None:
+            used_local[camera_id].add(local_id)
+        global_id = _as_int(row.get("global_track_id"))
+        if global_id is not None:
+            used_global.add(global_id)
+    next_local = {camera_id: (max(ids) + 1 if ids else 1) for camera_id, ids in used_local.items()}
+    next_global = max(used_global) + 1 if used_global else 1
+
+    def take_local(camera_id: str) -> int:
+        value = next_local.get(camera_id, 1)
+        while value in used_local[camera_id]:
+            value += 1
+        used_local[camera_id].add(value)
+        next_local[camera_id] = value + 1
+        return value
+
+    def take_global() -> int:
+        nonlocal next_global
+        value = next_global
+        while value in used_global:
+            value += 1
+        used_global.add(value)
+        next_global = value + 1
+        return value
+
+    by_local: dict[tuple[str, int], dict[int, list[int]]] = defaultdict(lambda: defaultdict(list))
+    for index, row in enumerate(rows):
+        local_id = _as_int(row.get("local_track_id"))
+        camera_id = row.get("camera_id")
+        frame_index = row.get("frame_index")
+        if local_id is None or camera_id is None or not isinstance(frame_index, int):
+            continue
+        by_local[(camera_id, local_id)][frame_index].append(index)
+
+    local_groups = 0
+    for (camera_id, local_id), frames in by_local.items():
+        if not any(len(indexes) > 1 for indexes in frames.values()):
+            continue
+        local_groups += 1
+        branches: list[dict[str, Any]] = []
+        for frame_index in sorted(frames):
+            indexes = frames[frame_index]
+            centers = [_center(rows[index].get("bbox_xyxy")) for index in indexes]
+            pairs: list[tuple[float, int, int]] = []
+            for branch_index, branch in enumerate(branches):
+                last = branch["last"]
+                for box_index, center in enumerate(centers):
+                    if last is None or center is None:
+                        distance = 1e18
+                    else:
+                        dx = center[0] - last[0]
+                        dy = center[1] - last[1]
+                        distance = dx * dx + dy * dy
+                    pairs.append((distance, branch_index, box_index))
+            pairs.sort()
+            used_branch: set[int] = set()
+            used_box: set[int] = set()
+            for _distance, branch_index, box_index in pairs:
+                if branch_index in used_branch or box_index in used_box:
+                    continue
+                used_branch.add(branch_index)
+                used_box.add(box_index)
+                branch = branches[branch_index]
+                branch["indices"].append(indexes[box_index])
+                if centers[box_index] is not None:
+                    branch["last"] = centers[box_index]
+            for box_index, index in enumerate(indexes):
+                if box_index in used_box:
+                    continue
+                branches.append({"indices": [index], "last": centers[box_index]})
+
+        def branch_rank(branch: dict[str, Any]) -> tuple[Any, ...]:
+            first = branch["indices"][0]
+            center = _center(rows[first].get("bbox_xyxy")) or (0.0, 0.0)
+            frame_index = rows[first].get("frame_index")
+            frame_key = frame_index if isinstance(frame_index, int) else 0
+            return (-len(branch["indices"]), frame_key, center[0], center[1])
+
+        ordered = sorted(branches, key=branch_rank)
+        for branch in ordered[1:]:
+            new_local = take_local(camera_id)
+            for index in branch["indices"]:
+                row = rows[index]
+                row["raw_local_track_id"] = local_id
+                row["local_track_id"] = new_local
+
+    by_global: dict[int, list[int]] = defaultdict(list)
+    for index, row in enumerate(rows):
+        global_id = _as_int(row.get("global_track_id"))
+        if global_id is None or row.get("camera_id") is None or not isinstance(row.get("frame_index"), int):
+            continue
+        by_global[global_id].append(index)
+
+    global_groups = 0
+    for global_id in sorted(by_global):
+        tracks: dict[tuple[str, int], list[int]] = defaultdict(list)
+        for index in by_global[global_id]:
+            row = rows[index]
+            local_id = _as_int(row.get("local_track_id"))
+            key_local = local_id if local_id is not None else -(index + 1)
+            tracks[(row["camera_id"], key_local)].append(index)
+        frame_sets = {key: {rows[index]["frame_index"] for index in members} for key, members in tracks.items()}
+        by_camera: dict[str, list[tuple[str, int]]] = defaultdict(list)
+        for key in tracks:
+            by_camera[key[0]].append(key)
+        extras: list[tuple[str, int]] = []
+        conflicted = False
+        for keys in by_camera.values():
+            involved: set[tuple[str, int]] = set()
+            for left_index, left in enumerate(keys):
+                for right in keys[left_index + 1 :]:
+                    if frame_sets[left] & frame_sets[right]:
+                        involved.add(left)
+                        involved.add(right)
+            if not involved:
+                continue
+            conflicted = True
+
+            def track_rank(key: tuple[str, int]) -> tuple[Any, ...]:
+                members = tracks[key]
+                unchanged = 0 if rows[members[0]].get("raw_local_track_id") is None else 1
+                return (unchanged, -len(members), key[1])
+
+            ordered_keys = sorted(involved, key=track_rank)
+            extras.extend(ordered_keys[1:])
+        if not conflicted:
+            continue
+        global_groups += 1
+        seen_extra: set[tuple[str, int]] = set()
+        for key in extras:
+            if key in seen_extra:
+                continue
+            seen_extra.add(key)
+            new_global = take_global()
+            for index in tracks[key]:
+                row = rows[index]
+                if row.get("raw_global_track_id") is None:
+                    row["raw_global_track_id"] = global_id
+                row["global_track_id"] = new_global
+
+    grouped_changes: dict[tuple[Any, Any], dict[str, Any]] = {}
+    for row in rows:
+        if row.get("raw_local_track_id") is None and row.get("raw_global_track_id") is None:
+            continue
+        key = (row.get("camera_id"), row.get("local_track_id"))
+        frame_index = row.get("frame_index")
+        item = grouped_changes.get(key)
+        if item is None:
+            grouped_changes[key] = {
+                "camera_id": row.get("camera_id"),
+                "raw_local_track_id": row.get("raw_local_track_id"),
+                "local_track_id": row.get("local_track_id"),
+                "raw_global_track_id": row.get("raw_global_track_id"),
+                "global_track_id": row.get("global_track_id"),
+                "observation_count": 1,
+                "start_frame": frame_index,
+                "end_frame": frame_index,
+            }
+            continue
+        item["observation_count"] += 1
+        if isinstance(frame_index, int):
+            if not isinstance(item["start_frame"], int) or frame_index < item["start_frame"]:
+                item["start_frame"] = frame_index
+            if not isinstance(item["end_frame"], int) or frame_index > item["end_frame"]:
+                item["end_frame"] = frame_index
+    reassignments = sorted(
+        grouped_changes.values(),
+        key=lambda item: (str(item["camera_id"]), item["local_track_id"] if isinstance(item["local_track_id"], int) else -1),
+    )
+    stats = {
+        "local_id_collision_groups": local_groups,
+        "global_id_collision_groups": global_groups,
+        "id_reassigned_tracks": len(reassignments),
+        "id_reassigned_observations": sum(item["observation_count"] for item in reassignments),
+    }
+    return reassignments, stats
+
+
 def assemble_observations(
     raw_rows: list[dict[str, Any]],
     *,
@@ -151,7 +359,7 @@ def assemble_observations(
     width: int | None,
     height: int | None,
     examples: ExampleBag,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, int], list[dict[str, Any]]]:
     seen: set[tuple[Any, ...]] = set()
     kept: list[dict[str, Any]] = []
     duplicate_count = 0
@@ -180,6 +388,10 @@ def assemble_observations(
         seen.add(key)
         kept.append(row)
 
+    reassignments, id_stats = reassign_duplicate_ids(kept)
+    if reassignments:
+        examples.add("id_reassigned", reassignments[0])
+
     grouped: dict[tuple[Any, Any, Any], list[int]] = defaultdict(list)
     for index, row in enumerate(kept):
         grouped[(row["camera_id"], row["frame_index"], row["local_track_id"])].append(index)
@@ -194,13 +406,11 @@ def assemble_observations(
     range_suspect = 0
     missing_global = 0
     manual_override = 0
-    collision_groups = 0
     missing_timestamp = 0
 
     for (camera_id, frame_index, local_track_id), indexes in grouped.items():
         collision = local_track_id is not None and len(indexes) > 1
         if collision:
-            collision_groups += 1
             conflicts.append(
                 {
                     "type": "local_id_frame_collision",
@@ -210,15 +420,6 @@ def assemble_observations(
                     "bboxes": [kept[index].get("bbox_xyxy") for index in indexes],
                     "global_track_ids": [kept[index].get("global_track_id") for index in indexes],
                 }
-            )
-            examples.add(
-                "local_id_frame_collision",
-                {
-                    "camera_id": camera_id,
-                    "frame_index": frame_index,
-                    "local_track_id": local_track_id,
-                    "bboxes": [kept[index].get("bbox_xyxy") for index in indexes],
-                },
             )
         for occurrence, index in enumerate(indexes):
             row = kept[index]
@@ -231,6 +432,8 @@ def assemble_observations(
             flags.extend(geometry_flags(row.get("geometry_3d")))
             if collision:
                 flags.append("local_id_frame_collision")
+            if row.get("raw_local_track_id") is not None or row.get("raw_global_track_id") is not None:
+                flags.append("id_reassigned")
             if row.get("manual_override"):
                 flags.append("manual_gid_override")
                 manual_override += 1
@@ -281,7 +484,9 @@ def assemble_observations(
                     "timebase_source": timebase_source,
                     "global_timestamp_ms": None,
                     "local_track_id": local_track_id,
+                    "raw_local_track_id": row.get("raw_local_track_id"),
                     "global_track_id": row.get("global_track_id"),
+                    "raw_global_track_id": row.get("raw_global_track_id"),
                     "original_global_track_id": row.get("original_global_track_id"),
                     "class_name": class_name,
                     "class_name_raw": row.get("class_name_raw"),
@@ -340,7 +545,6 @@ def assemble_observations(
         "input_records": len(raw_rows),
         "exact_duplicates_removed": duplicate_count,
         "written_observations": len(observations),
-        "collision_groups": collision_groups,
         "invalid_bbox": invalid_bbox,
         "bbox_out_of_frame": out_of_frame,
         "class_unmapped": unmapped,
@@ -349,8 +553,9 @@ def assemble_observations(
         "missing_global_id": missing_global,
         "manual_gid_override": manual_override,
         "missing_timestamp": missing_timestamp,
+        **id_stats,
     }
-    return observations, conflicts, anomalies, stats
+    return observations, conflicts, anomalies, stats, reassignments
 
 
 def build_tracklets(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -371,10 +576,14 @@ def build_tracklets(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
             flags.append("frame_gap")
         if any("local_id_frame_collision" in row["quality_flags"] for row in rows):
             flags.append("local_id_frame_collision")
+        if any("id_reassigned" in row["quality_flags"] for row in rows):
+            flags.append("id_reassigned")
         raw_classes = sorted({row["class_name_raw"] for row in rows})
         if len(raw_classes) > 1:
             flags.append("class_inconsistent")
         global_ids = {row["global_track_id"] for row in rows}
+        raw_locals = {row["raw_local_track_id"] for row in rows if row["raw_local_track_id"] is not None}
+        raw_globals = {row["raw_global_track_id"] for row in rows if row["raw_global_track_id"] is not None}
         original_ids = {row["original_global_track_id"] for row in rows if row["original_global_track_id"] is not None}
         if len(global_ids) > 1:
             flags.append("global_id_inconsistent")
@@ -388,7 +597,9 @@ def build_tracklets(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "source_version": first["source_version"],
                     "camera_id": camera_id,
                     "local_track_id": local_track_id,
+                    "raw_local_track_id": next(iter(raw_locals)) if len(raw_locals) == 1 else None,
                     "global_track_id": next(iter(global_ids)) if len(global_ids) == 1 else None,
+                    "raw_global_track_id": next(iter(raw_globals)) if len(raw_globals) == 1 else None,
                     "original_global_track_id": next(iter(original_ids)) if len(original_ids) == 1 else None,
                     "class_name": first["class_name"],
                     "class_name_raw": first["class_name_raw"],
@@ -424,15 +635,20 @@ def build_global_tracks(observations: list[dict[str, Any]]) -> list[dict[str, An
             flags.append("class_conflict")
         if any("manual_deleted" in row["quality_flags"] for row in rows):
             flags.append("manual_deleted")
+        if any("id_reassigned" in row["quality_flags"] for row in rows):
+            flags.append("id_reassigned")
         camera_counts: dict[str, int] = defaultdict(int)
         local_ids: set[str] = set()
         original_ids: set[int] = set()
+        raw_globals: set[int] = set()
         for row in rows:
             camera_counts[row["camera_id"]] += 1
             if row["local_track_id"] is not None:
                 local_ids.add(f"{row['camera_id']}:{row['local_track_id']}")
             if row["original_global_track_id"] is not None:
                 original_ids.add(row["original_global_track_id"])
+            if row["raw_global_track_id"] is not None:
+                raw_globals.add(row["raw_global_track_id"])
         timestamps = [row["timestamp_ms"] for row in rows if row["timestamp_ms"] is not None]
         plates = {row["plate"] for row in rows if row["plate"]}
         first = rows[0]
@@ -443,6 +659,7 @@ def build_global_tracks(observations: list[dict[str, Any]]) -> list[dict[str, An
                     "sequence_id": first["sequence_id"],
                     "source_version": first["source_version"],
                     "global_track_id": global_track_id,
+                    "raw_global_track_id": next(iter(raw_globals)) if len(raw_globals) == 1 else None,
                     "class_name": first["class_name"],
                     "class_names_raw": raw_classes,
                     "camera_ids": sorted(camera_counts),
@@ -471,9 +688,10 @@ def compare_assignment_to_frames(
 ) -> list[dict[str, Any]]:
     grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
     for observation in observations:
-        if observation["local_track_id"] is None:
+        source_local = _source_local_id(observation)
+        if source_local is None:
             continue
-        grouped[(observation["camera_id"], int(observation["local_track_id"]))].append(observation)
+        grouped[(observation["camera_id"], source_local)].append(observation)
     mismatches: list[dict[str, Any]] = []
     for key, summary in by_local.items():
         rows = grouped.get(key, [])
@@ -618,6 +836,7 @@ def write_version(
     observations: list[dict[str, Any]],
     conflicts: list[dict[str, Any]],
     anomalies: list[dict[str, Any]],
+    reassignments: list[dict[str, Any]] | None = None,
 ) -> None:
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -628,6 +847,7 @@ def write_version(
     dump_jsonl(output_dir / "observations.jsonl", observations)
     dump_jsonl(output_dir / "tracklets.jsonl", build_tracklets(observations))
     dump_jsonl(output_dir / "global_tracks.jsonl", build_global_tracks(observations))
+    dump_jsonl(output_dir / "id_reassignments.jsonl", reassignments or [])
     dump_jsonl(quarantine_dir / "conflicts.jsonl", conflicts)
     dump_jsonl(quarantine_dir / "anomalies.jsonl", anomalies)
 
@@ -712,7 +932,7 @@ def convert_aligned(
                 "world_position": None,
             }
         )
-    observations, conflicts, anomalies, stats = assemble_observations(
+    observations, conflicts, anomalies, stats, reassignments = assemble_observations(
         raw_rows,
         site_id=site_id,
         sequence_id=sequence_id,
@@ -725,7 +945,7 @@ def convert_aligned(
     )
     if geometry_mismatches:
         conflicts.append({"type": "pixel_camera_alignment", "mismatches": geometry_mismatches, "attached": attached})
-    write_version(output_dir, quarantine_dir, observations, conflicts, anomalies)
+    write_version(output_dir, quarantine_dir, observations, conflicts, anomalies, reassignments)
     stats.update(
         {
             "source_version": source_version,
@@ -799,7 +1019,7 @@ def convert_tracks(
                     "world_position": None,
                 }
             )
-    observations, conflicts, anomalies, stats = assemble_observations(
+    observations, conflicts, anomalies, stats, reassignments = assemble_observations(
         raw_rows,
         site_id=site_id,
         sequence_id=sequence_id,
@@ -816,7 +1036,7 @@ def convert_tracks(
     conflicts.extend(summary_conflicts)
     for item in summary_conflicts[:5]:
         examples.add(item["type"], item)
-    write_version(output_dir, quarantine_dir, observations, conflicts, anomalies)
+    write_version(output_dir, quarantine_dir, observations, conflicts, anomalies, reassignments)
     stats.update(
         {
             "source_version": source_version,
@@ -922,7 +1142,7 @@ def convert_detr(
                     "record_uid_suffix": f"img{image['image_id']}",
                 }
             )
-    observations, conflicts, anomalies, stats = assemble_observations(
+    observations, conflicts, anomalies, stats, reassignments = assemble_observations(
         raw_rows,
         site_id=site_id,
         sequence_id=sequence_id,
@@ -944,7 +1164,7 @@ def convert_detr(
     if coco_count != header.get("total_detection_count"):
         conflicts.append({"type": "coco_count_mismatch", **coco_status})
         examples.add("coco_count_mismatch", coco_status)
-    write_version(output_dir, quarantine_dir, observations, conflicts, anomalies)
+    write_version(output_dir, quarantine_dir, observations, conflicts, anomalies, reassignments)
     linked = sum(1 for row in observations if row["appearance_ref"] is not None)
     stats.update(
         {
@@ -1045,7 +1265,7 @@ def convert_pipeline_result(
                 }
             )
     # 流水线类别已经是标准名，跳过历史映射表
-    observations, conflicts, anomalies, stats = assemble_observations(
+    observations, conflicts, anomalies, stats, reassignments = assemble_observations(
         raw_rows,
         site_id=site_id,
         sequence_id=sequence_id,
@@ -1056,7 +1276,7 @@ def convert_pipeline_result(
         height=_single_camera_size(payload, "height"),
         examples=examples,
     )
-    write_version(output_dir, quarantine_dir, observations, conflicts, anomalies)
+    write_version(output_dir, quarantine_dir, observations, conflicts, anomalies, reassignments)
     stats.update(
         {
             "source_version": source_version,

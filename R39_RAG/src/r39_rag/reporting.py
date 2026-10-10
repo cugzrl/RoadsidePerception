@@ -42,7 +42,7 @@ def write_schema_doc(path: Path) -> None:
         "",
         "### source_version",
         "",
-        "同一序列上的一种处理结果。`sam3_aligned` 来自对齐后的像素框和相机三维框，`sam3_manual_gid` 来自单相机轨迹并采用人工修正后的全局 ID，`detr_car` 来自只检测 car 的 DETR 结果，`roadside_pipeline` 预留给现有 `result.json`。不同版本不会互相覆盖。",
+        "同一序列上的一种处理结果。`sam3_aligned` 来自对齐后的像素框和相机三维框，`sam3_manual_gid` 来自单相机轨迹并采用人工修正后的全局 ID，`roadside_pipeline` 预留给现有 `result.json`。不同版本不会互相覆盖。",
         "",
         "### frame_index",
         "",
@@ -68,7 +68,7 @@ def write_schema_doc(path: Path) -> None:
         "",
         "### coordinate_frame",
         "",
-        "- `unknown`：`camera_box_3d` 的长宽中位数约十几米到几十米，高度多为类别假定值，不能当成真实车体尺寸或统一世界坐标",
+        "- `unknown`：`camera_box_3d` 的长宽大量偏离正常车辆，例如 Car 出现 length=132.73、width=36.77、height=1.50。该三维尺寸字段保留用于追溯，不用于后续知识库构建",
         "- `unverified_assumed_ground_plane`：SAM3 轨迹里的 `ground_point_3d`，z 被假定为 0，原点、轴向和单位都没有在本轮核实",
         "- `road_homography_xy`：现有工程用单应矩阵得到的路面坐标",
         "- `null`：这条观测没有三维或路面坐标",
@@ -103,7 +103,8 @@ def write_schema_doc(path: Path) -> None:
             "- `class_unmapped`：原始类别不能对应七类标准名",
             "- `invalid_bbox`：框为空、零面积或左右上下颠倒",
             "- `bbox_out_of_frame`：框超出图像宽高",
-            "- `local_id_frame_collision`：同一局部 ID 在同一帧有多套不同的框",
+            "- `id_reassigned`：同一相机同一帧的重复 ID 已拆开。新编号写在 `local_track_id` 或 `global_track_id`，原编号留在 `raw_local_track_id`、`raw_global_track_id`",
+            "- `local_id_frame_collision`：拆分后仍有同一局部 ID 在同一帧对应多个框，按未解决冲突保留",
             "- `geometry_size_implausible`：三维长大于 12 米、宽大于 3.5 米，或长宽为 0",
             "- `geometry_range_suspect`：平面坐标绝对值大于 150",
             "- `missing_global_id`：没有可用的全局 ID",
@@ -142,7 +143,11 @@ def write_inventory(report: dict[str, Any], path: Path) -> None:
         lines.append("| 相对路径 | 大小 | 类型 |")
         lines.append("| --- | ---: | --- |")
         for item in dataset["files"]:
-            lines.append(f"| `{item['relative']}` | {_size_mb(item['size'])} | {item['kind']} |")
+            kind = item["kind"]
+            relative = item["relative"]
+            if relative.startswith("20250924_070957/detr_result/") or relative.startswith("20250924_070957/resnet_result/"):
+                kind = f"{kind}，本地补充，不纳入清洗"
+            lines.append(f"| `{relative}` | {_size_mb(item['size'])} | {kind} |")
         lines.append("")
 
     lines.extend(
@@ -181,8 +186,8 @@ def write_inventory(report: dict[str, Any], path: Path) -> None:
                 f"人工版本 {manual['manual_tracks']} 条局部轨迹、{manual['manual_global_objects']} 个全局目标。"
             )
             lines.append("")
-        if sequence["include_detr"]:
-            lines.append("该序列另外包含 DETR car 检测和 ResNet50 特征索引，作为 `detr_car` 版本，不与 SAM3 轨迹合并。")
+        if sequence.get("excluded_note"):
+            lines.append(sequence["excluded_note"])
             lines.append("")
 
     lines.extend(
@@ -197,7 +202,7 @@ def write_inventory(report: dict[str, Any], path: Path) -> None:
             "",
             "类型 D 是现有流水线 `result.json`。本次原始目录里没有这种结果，适配器已能读取仓库中的示例结构。",
             "",
-            "DETR `detections.json` 只有 car，有置信度和 `bbox_xyxy`，没有轨迹 ID。`detections_coco.json` 使用 COCO 的 xywh，不单独再转一份观测。`feature_metadata.json` 只保存特征索引，不复制 `.npy`。",
+            "`20250924_070957/detr_result` 和 `resnet_result` 是本地补充的检测与特征，不是甲方结构化数据。盘点时能看到这些文件，清洗时忽略，不写入 `data/normalized`。",
             "",
             "## 时间与视频",
             "",
@@ -209,7 +214,7 @@ def write_inventory(report: dict[str, Any], path: Path) -> None:
             "",
             "## 版本关系",
             "",
-            "`result/20250924_070957` 与 `result/20251021_070024` 各有一套对齐框。20250924 还有 DETR 和 ResNet 特征。`aligned_pixel_bbox.json`、`aligned_camera_bbox.json` 是合并文件的拆分，投影文件是派生结果。",
+            "`result/20250924_070957` 与 `result/20251021_070024` 各有一套对齐框。20250924 目录里的 DETR 和 ResNet 是本地补充，不纳入统一结果。`aligned_pixel_bbox.json`、`aligned_camera_bbox.json` 是合并文件的拆分，投影文件是派生结果。",
             "",
             "R39_new 的 0、1、2、3 不是 20251021_070024 的重复处理。它们的原始序列目录分别是 `20251021_070125`、`070226`、`070327`、`070428`，视频文件大小也不同。每个目录里的自动全局 ID、人工全局 ID、文本映射和轨迹框属于同一段视频的不同版本。",
             "",
@@ -241,7 +246,7 @@ def write_quality(path: Path) -> None:
         "",
         "本报告只描述格式转换和一致性检查。它不评估检测或跟踪准确率，也不计算 MOTA、IDF1、HOTA。",
         "",
-        "完全相同的记录会去掉重复并计数。同一主键内容不同的记录全部保留，并写入 `data/quarantine`。不同处理版本分目录保存。",
+        "完全相同的记录会去掉重复并计数。同一相机、同一帧、同一 ID 对应多个位置时，全部保留并改写成互不重复的 ID；其他相机里同一个全局 ID 会一起核对，冲突的目标分开编号，不冲突的跨相机关联保留原全局 ID。改写清单在各版本目录的 `id_reassignments.jsonl`。版本差异和摘要不一致仍写入 `data/quarantine`。",
         "",
         "## 总览",
         "",
@@ -315,6 +320,15 @@ def write_quality(path: Path) -> None:
             if item.get("track_layer"):
                 lines.append(item["track_layer"])
                 lines.append("")
+            if item.get("id_reassigned_tracks"):
+                lines.append(
+                    f"同帧同 ID 的多个位置已拆分。局部冲突轨迹 {item.get('local_id_collision_groups', 0)} 条，"
+                    f"全局冲突 ID {item.get('global_id_collision_groups', 0)} 个，"
+                    f"改写后的轨迹 {item['id_reassigned_tracks']} 条，涉及观测 {item.get('id_reassigned_observations', 0)} 条。"
+                    "同一相机内新局部 ID 不与已有编号重复，新全局 ID 不与本序列本版本已有编号重复。"
+                    "其他相机里没有同帧冲突的关联仍使用原全局 ID。"
+                )
+                lines.append("")
             examples = item.get("examples") or {}
             if examples:
                 lines.append("示例：")
@@ -326,7 +340,7 @@ def write_quality(path: Path) -> None:
         [
             "## 坐标系",
             "",
-            "`sam3_aligned` 的三维框来自 `camera_boxes`。尺寸检查使用长度大于 12 米、宽度大于 3.5 米或长宽为 0 作为明显异常，只打标记，不删除，也不回写二维框。",
+            "`sam3_aligned` 的三维框来自 `camera_boxes`。尺寸检查使用长度大于 12 米、宽度大于 3.5 米或长宽为 0 作为明显异常。这些尺寸保留在 `geometry_3d.size_lwh` 中，只作追溯，不删除、不回写二维框，也不进入后续空间或轨迹知识库。",
             "",
             "`sam3_manual_gid` 的地面点来自轨迹文件。部分点的平面坐标绝对值超过 150，标记为 `geometry_range_suspect`。现有工程 `configs/cameras/r39` 的单应矩阵没有拿来重算这些点。",
             "",
@@ -334,7 +348,7 @@ def write_quality(path: Path) -> None:
             "",
             "## 隔离文件",
             "",
-            "`data/quarantine/<sequence_id>/<source_version>/conflicts.jsonl` 保存同键冲突、版本差异和摘要不一致。`anomalies.jsonl` 保存无效框和越界框。原始文件没有被修改。",
+            "`data/normalized/sequences/<sequence_id>/versions/<source_version>/id_reassignments.jsonl` 记录已经改写的 ID。`data/quarantine/<sequence_id>/<source_version>/conflicts.jsonl` 保存版本差异和摘要不一致。`anomalies.jsonl` 保存无效框和越界框。原始文件没有被修改。",
             "",
         ]
     )

@@ -62,7 +62,8 @@ sequences:
     relative_dir: "20250924_070957"
     origin_sequence_dir: /home/stu/ZH20260617/sam3/output/multi_view/20250924_070957
     capture_time_candidate: "2025-09-24 07:09:57"
-    include_detr: true
+    include_detr: false
+    excluded_note: "detr_result 与 resnet_result 是本地补充的检测和外观特征，不是甲方结构化数据，不进入统一结果"
   - sequence_id: r39_20251021_070024
     dataset: result
     relative_dir: "20251021_070024"

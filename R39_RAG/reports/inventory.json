@@ -1042,7 +1042,8 @@
         }
       },
       "manual": null,
-      "include_detr": true,
+      "include_detr": false,
+      "excluded_note": "detr_result 与 resnet_result 是本地补充的检测和外观特征，不是甲方结构化数据，不进入统一结果",
       "has_historical_calibration": true,
       "header_excerpt": "{\n  \"sequence_dir\": \"/home/stu/ZH20260617/sam3/output/multi_view/20250924_070957\",\n  \"num_records\": 125990,\n  \"pixel_boxes\": [\n    {\n      \"camera_key\": \"R39_Aw_CamS\",\n      \"local_obj_id\": 10,\n      \"global_obj_id\": 1,\n      \"frame_index\": 0,\n      \"class_name\": \"car\",\n      \"label\": \"car:10\",\n      \"bbox_xyxy\": {\n        \"x0\": 713,\n        \"y0\": 74,\n        \"x1\": 735,\n        \"y1\": 92\n      },\n "
     },
@@ -1136,6 +1137,7 @@
       },
       "manual": null,
       "include_detr": false,
+      "excluded_note": null,
       "has_historical_calibration": true,
       "header_excerpt": "{\n  \"sequence_dir\": \"/home/stu/ZH20260617/sam3/output/multi_view/20251021_070024\",\n  \"num_records\": 64071,\n  \"pixel_boxes\": [\n    {\n      \"camera_key\": \"R39_Aw_CamS\",\n      \"local_obj_id\": 1,\n      \"global_obj_id\": 1,\n      \"frame_index\": 0,\n      \"class_name\": \"car\",\n      \"label\": \"car:1\",\n      \"bbox_xyxy\": {\n        \"x0\": 752,\n        \"y0\": 88,\n        \"x1\": 762,\n        \"y1\": 101\n      },\n   "
     },
@@ -1235,6 +1237,7 @@
         "has_manual_fix": true
       },
       "include_detr": false,
+      "excluded_note": null,
       "has_historical_calibration": false,
       "header_excerpt": "{\n  \"sequence_dir\": \"/home/stu/ZH20260617/sam3/output/multi_view/20251021_070125\",\n  \"num_input_tracks\": 191,\n  \"num_global_objects\": 115,\n  \"tracks\": [\n    {\n      \"camera_key\": \"R39_Aw_CamS\",\n      \"local_obj_id\": 1,\n      \"global_obj_id\": 1,\n      \"original_global_obj_id\": 1,\n      \"label\": \"car:"
     },
@@ -1334,6 +1337,7 @@
         "has_manual_fix": true
       },
       "include_detr": false,
+      "excluded_note": null,
       "has_historical_calibration": false,
       "header_excerpt": "{\n  \"sequence_dir\": \"/home/stu/ZH20260617/sam3/output/multi_view/20251021_070226\",\n  \"num_input_tracks\": 268,\n  \"num_global_objects\": 146,\n  \"tracks\": [\n    {\n      \"camera_key\": \"R39_Aw_CamS\",\n      \"local_obj_id\": 1,\n      \"global_obj_id\": 1,\n      \"original_global_obj_id\": 1,\n      \"label\": \"car:"
     },
@@ -1433,6 +1437,7 @@
         "has_manual_fix": true
       },
       "include_detr": false,
+      "excluded_note": null,
       "has_historical_calibration": false,
       "header_excerpt": "{\n  \"sequence_dir\": \"/home/stu/ZH20260617/sam3/output/multi_view/20251021_070327\",\n  \"num_input_tracks\": 238,\n  \"num_global_objects\": 136,\n  \"tracks\": [\n    {\n      \"camera_key\": \"R39_Aw_CamS\",\n      \"local_obj_id\": 2,\n      \"global_obj_id\": 28,\n      \"original_global_obj_id\": 28,\n      \"label\": \"ca"
     },
@@ -1531,6 +1536,7 @@
         "has_manual_fix": true
       },
       "include_detr": false,
+      "excluded_note": null,
       "has_historical_calibration": false,
       "header_excerpt": "{\n  \"sequence_dir\": \"/home/stu/ZH20260617/sam3/output/multi_view/20251021_070428\",\n  \"num_input_tracks\": 216,\n  \"num_global_objects\": 125,\n  \"tracks\": [\n    {\n      \"camera_key\": \"R39_Aw_CamS\",\n      \"local_obj_id\": 1,\n      \"global_obj_id\": 1,\n      \"original_global_obj_id\": 1,\n      \"label\": \"car:"
     }
@@ -1546,7 +1552,7 @@
         "r39_20251021_070327",
         "r39_20251021_070428"
       ],
-      "note": "目录时间大约每 61 秒一段，且每段原始视频时长 60 秒。没有独立时间戳或画面对齐证据，各段保持独立序列"
+      "note": "目录时间大约每61秒一段，且每段原始视频时长60秒。没有独立时间戳或画面对齐证据，各段保持独立序列"
     }
   ],
   "project_root": "/home/kemove/devdata1/RodeTest/roadside_perception/R39_RAG"
