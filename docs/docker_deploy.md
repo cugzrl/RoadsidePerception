@@ -1,50 +1,58 @@
 # Docker 打包与部署
 
-镜像名：`roadside-perception:20260923`。镜像包含检测、跟踪、车牌识别、可视化所需的源码、权重、标定文件和已编译的 RAMA 扩展。容器内没有 RAMA 源码、原始视频或历史输出。
+沿用 roadside-perception:20260923。本次仅补充启动脚本、交付工具和文档，不修改算法或重建已验证镜像。
 
-## 在本机运行
+接收方说明见 [交付 README](../packaging/README.md)。整个交付目录一起发送，不需要开发源码或 Conda 环境归档。
 
-准备一个目录，直接放入 1 到 4 个视频文件。支持 `.mp4`、`.mov`、`.mkv`、`.avi`、`.m4v`。文件名（不含扩展名）默认作为相机 ID；内置 R39 标定文件按相机 ID 自动匹配。
+## 从已有归档生成交付目录
 
-```bash
-cd /home/kemove/devdata1/RodeTest/roadside_perception
-./run_container.sh /path/to/videos /path/to/output --overwrite
-```
-
-短序列验证：
+项目根目录执行（需要 Python 3.9+、Docker、可用 NVIDIA GPU、gzip）：
 
 ```bash
-./run_container.sh /path/to/videos /path/to/output --max-frames 2 --overwrite
+python3 packaging/create_release.py \
+  --archive ../roadside-perception_20260923.tar.gz \
+  --output ../roadside-perception-release-20260923
 ```
 
-如需使用其他标定根目录，目录中放置 `<相机ID>/calibration.json` 或 `<相机ID>.json`，然后运行：
+不传 --archive 则 docker save 后 gzip -1 导出；--image 可选择其他已加载标签。输出目录必须不存在。脚本检查平台、执行断网 GPU 自检、验证归档标签和镜像 ID、采集镜像内依赖及源码/模型指纹、生成 SHA256SUMS。全部成功后才生成最终目录，不覆盖原归档或重建算法。
+
+BUILD_INFO.txt 的 Git 信息描述打包工作区，不代表旧镜像源码提交。镜像内容以 IMAGE_ID 和 IMAGE_CONTENTS.json 为准。
+
+## 验收
 
 ```bash
-ROAD_CALIBRATION_DIR=/path/to/calibrations \
-  ./run_container.sh /path/to/videos /path/to/output --overwrite
+cd ../roadside-perception-release-20260923
+./load_image.sh
+./check_env.sh /data/videos /data/results-check
+./run_container.sh /data/videos /data/results-smoke --max-frames 20
 ```
 
-其余参数（例如 `--scene-id`、`--resume`、`--device`、`--det-threshold`）会传给原有 `scripts/run_pipeline.py`。视频按文件名字母顺序处理；若文件名与相机 ID 不同，可追加 `--camera-ids ID1 ID2`。输出目录中最终使用 `result.json` 和 `visualization.mp4`。
+检查 result.json 和 visualization.mp4；正式验收另需清晰车牌、多目关联和长视频，自检不替代算法准确率验收。
 
-## 从镜像归档载入
+## 确需重建算法镜像时
+
+Dockerfile 仍通过多阶段构建解包现有 Conda 环境，不在最终镜像保留环境归档。以下仅在需要更新镜像时执行，事先准备权重和已编译 RAMA，使用新标签：
 
 ```bash
-gzip -dc /home/kemove/devdata1/RodeTest/roadside-perception_20260923.tar.gz | docker load
+conda pack -n roadside_perception -o roadside_perception-env.tar.gz
+docker build -t roadside-perception:NEW_VERSION .
+rm roadside_perception-env.tar.gz
+python3 packaging/create_release.py \
+  --image roadside-perception:NEW_VERSION \
+  --output ../roadside-perception-release-NEW_VERSION
 ```
 
-服务器需要 NVIDIA 驱动、NVIDIA Container Toolkit 和 Docker GPU 支持。运行脚本会挂载视频目录为只读、挂载输出目录为可写，并以当前用户身份写入结果。
+不要跳过缺失文件检查以代替完整环境验证。新镜像还需真实视频测试。CUDA 基础镜像、依赖版本和 RAMA 编译配置保持原样，瘦身及兼容范围扩展应单独验证。
 
-## 重建镜像
+## 合并为最终交付压缩包
 
-在已有 `roadside_perception` Conda 环境的服务器上：
+部署指南修改后，同步到交付目录的 README.md，重新生成校验清单，再压缩整个目录（文件名沿用当前交付版本）：
 
 ```bash
-cd /home/kemove/devdata1/RodeTest
-conda pack -n roadside_perception -o roadside_perception-env.tar.gz --ignore-missing-files
-ln roadside_perception-env.tar.gz roadside_perception/roadside_perception-env.tar.gz
-docker build -t roadside-perception:20260923 roadside_perception
-rm roadside_perception/roadside_perception-env.tar.gz
-docker save roadside-perception:20260923 | gzip -1 > roadside-perception_20260923.tar.gz
+cd ../roadside-perception-release-20260923
+find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' | sort -z | xargs -0 sha256sum > SHA256SUMS
+cd ..
+tar -czf roadside-perception-delivery-20260923.tar.gz roadside-perception-release-20260923
 ```
 
-`Dockerfile` 通过多阶段构建展开环境，运行镜像里不会保留压缩归档。建议重新构建后用短视频实际运行一次，确认 `result.json` 与 `visualization.mp4` 均生成。
+外层文件是交付压缩包，内层 image.tar.gz 是 Docker 镜像归档。对外只发送 roadside-perception-delivery-20260923.tar.gz。首次发布前应解压校验，或逐项验证压缩包内文件与 SHA256SUMS 一致。

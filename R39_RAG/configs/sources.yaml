@@ -1,0 +1,95 @@
+site_id: R39
+schema_version: r39_rag.v1
+
+links:
+  - name: result
+    source: /home/kemove/devdata1/R2/result
+    link: data/raw/result
+  - name: R39_new
+    source: /home/kemove/devdata1/R2/R39_new
+    link: data/raw/R39_new
+
+cameras:
+  - R39_Aw_CamS
+  - R39_Bn_CamW
+  - R39_Ce_CamN
+  - R39_Ds_CamE
+
+pipeline_calibration_dir: ../configs/cameras/r39
+track_subdir: sam3_multi_car__person__truck__bus__motorcycle__bicycle
+
+# 目录名间隔约61秒，每段视频60秒
+unverified_groups:
+  - id: possible_consecutive_20251021
+    status: unverified
+    sequence_ids:
+      - r39_20251021_070024
+      - r39_20251021_070125
+      - r39_20251021_070226
+      - r39_20251021_070327
+      - r39_20251021_070428
+    note: 目录时间大约每61秒一段，且每段原始视频时长60秒。没有独立时间戳或画面对齐证据，各段保持独立序列
+
+datasets:
+  result:
+    root_link: data/raw/result
+    video: "{dir}/raw_video/{cam}/{cam}.mp4"
+    frame_cache: "{dir}/raw_video/{cam}/sam3_multi_frames/frame_cache_meta.json"
+    calibration: "{dir}/calib.json"
+    bbox_info: "{dir}/box_info/aligned_bbox_info.json"
+    pixel_file: "{dir}/box_info/aligned_pixel_bbox.json"
+    camera_file: "{dir}/box_info/aligned_camera_bbox.json"
+    projected_file: "{dir}/box_info/projected_pixel_bbox.json"
+    detections: "{dir}/detr_result/detections.json"
+    coco: "{dir}/detr_result/detections_coco.json"
+    feature_metadata: "{dir}/resnet_result/feature_metadata.json"
+  R39_new:
+    root_link: data/raw/R39_new
+    video: "{dir}/原始视频/{cam}.mp4"
+    frame_cache: "{dir}/{cam}/sam3_multi_frames/frame_cache_meta.json"
+    calibration: null
+    tracks: "{dir}/{cam}/{track_subdir}/tracks.json"
+    auto_global: "{dir}/multi_view_global_ids.json"
+    manual_global: "{dir}/multi_view_global_ids_manual.json"
+    manual_corrections: "{dir}/manual_id_corrections.txt"
+    lid_map: "{dir}/lid_to_gid_mapping.txt"
+    lid_map_manual: "{dir}/lid_to_gid_mapping_manual.txt"
+    split_config: "{dir}/原始视频/split_config.yaml"
+
+sequences:
+  - sequence_id: r39_20250924_070957
+    dataset: result
+    relative_dir: "20250924_070957"
+    origin_sequence_dir: /home/stu/ZH20260617/sam3/output/multi_view/20250924_070957
+    capture_time_candidate: "2025-09-24 07:09:57"
+    include_detr: true
+  - sequence_id: r39_20251021_070024
+    dataset: result
+    relative_dir: "20251021_070024"
+    origin_sequence_dir: /home/stu/ZH20260617/sam3/output/multi_view/20251021_070024
+    capture_time_candidate: "2025-10-21 07:00:24"
+    include_detr: false
+  - sequence_id: r39_20251021_070125
+    dataset: R39_new
+    relative_dir: "0"
+    origin_sequence_dir: /home/stu/ZH20260617/sam3/output/multi_view/20251021_070125
+    capture_time_candidate: "2025-10-21 07:01:25"
+    include_detr: false
+  - sequence_id: r39_20251021_070226
+    dataset: R39_new
+    relative_dir: "1"
+    origin_sequence_dir: /home/stu/ZH20260617/sam3/output/multi_view/20251021_070226
+    capture_time_candidate: "2025-10-21 07:02:26"
+    include_detr: false
+  - sequence_id: r39_20251021_070327
+    dataset: R39_new
+    relative_dir: "2"
+    origin_sequence_dir: /home/stu/ZH20260617/sam3/output/multi_view/20251021_070327
+    capture_time_candidate: "2025-10-21 07:03:27"
+    include_detr: false
+  - sequence_id: r39_20251021_070428
+    dataset: R39_new
+    relative_dir: "3"
+    origin_sequence_dir: /home/stu/ZH20260617/sam3/output/multi_view/20251021_070428
+    capture_time_candidate: "2025-10-21 07:04:28"
+    include_detr: false

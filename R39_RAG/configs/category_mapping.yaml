@@ -1,0 +1,47 @@
+# 与RD-DETR的七个类别对齐
+canonical:
+  - {id: 0, name: Car}
+  - {id: 1, name: Van}
+  - {id: 2, name: Bus}
+  - {id: 3, name: Tricycle}
+  - {id: 4, name: ScooterRider}
+  - {id: 5, name: Cyclist}
+  - {id: 6, name: Pedestrian}
+
+mappings:
+  car:
+    status: mapped
+    class_name: Car
+    class_id: 0
+    note: 语义对应Car
+  bus:
+    status: mapped
+    class_name: Bus
+    class_id: 2
+    note: 语义对应Bus
+  person:
+    status: mapped
+    class_name: Pedestrian
+    class_id: 6
+    note: 语义对应Pedestrian
+  truck:
+    status: unmapped
+    note: 七类中没有Truck，不并入Bus或Car
+  motorcycle:
+    status: unmapped
+    note: 不等于ScooterRider
+  bicycle:
+    status: unmapped
+    note: 不等于Cyclist
+  id:
+    status: unmapped
+    note: 原始类别缺失时的占位符
+
+pipeline_names:
+  Car: 0
+  Van: 1
+  Bus: 2
+  Tricycle: 3
+  ScooterRider: 4
+  Cyclist: 5
+  Pedestrian: 6

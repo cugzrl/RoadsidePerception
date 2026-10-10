@@ -1,5 +1,7 @@
 # 路侧端到端感知
 
+镜像交付请参阅 [打包说明](docs/docker_deploy.md) 和 [接收方部署指南](packaging/README.md)。
+
 流水线支持一到四路视频，固定按20FPS抽帧，依次完成RD-DETR检测、ResNet特征提取、STMC全局跟踪、HyperLPR3车牌识别和JSON导出
 
 七个类别全部参与跟踪，只对Car、Van、Bus识别车牌

@@ -7,14 +7,14 @@ outputs/
 **/build/
 **/dist/
 
-# Docker 镜像与环境打包归档（体积大，不入库）
+# Docker镜像与环境打包归档
 *.tar
 *.tar.gz
 *.tgz
 roadside_perception-env.tar.gz
 roadside-perception_*.tar.gz
 
-# 模型权重（单文件超 GitHub 限制，请本地或镜像内放置）
+# 模型权重
 models/detection/*.pth
 models/reid/*.pth
 models/license_plate/**/*.onnx
@@ -37,3 +37,9 @@ models/license_plate/**/*.onnx
 *.swo
 .idea/
 .vscode/
+
+# R39_RAG原始数据软链接、统一结果和隔离清单
+R39_RAG/data/raw/
+R39_RAG/data/normalized/
+R39_RAG/data/quarantine/
+
