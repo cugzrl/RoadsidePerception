@@ -1,46 +1,46 @@
 schema_version: r39_rag.v1
 
 observation_fields:
-  - {name: site_id, type: string, nullable: false, description: 路口编号。当前数据均为 R39，不拿它代替采集序列}
-  - {name: sequence_id, type: string, nullable: false, description: 一次独立视频采集的标识。不同日期、不同切段不能共用}
-  - {name: source_version, type: string, nullable: false, description: 同一序列上的处理版本，例如 sam3_aligned、sam3_manual_gid、detr_car}
-  - {name: camera_id, type: string, nullable: false, description: 摄像头编号，如 R39_Aw_CamS}
-  - {name: frame_index, type: int, nullable: false, description: 抽帧后的帧编号，从 0 开始。不是原始视频帧号}
-  - {name: source_frame_index, type: int, nullable: true, description: 估计的原始视频帧号。无法确认抽帧起点时为空}
-  - {name: timestamp_ms, type: float, nullable: true, description: 序列内相对时间，单位毫秒。没有可靠依据时为空，不使用固定 20 FPS 填值}
-  - {name: timestamp_estimated, type: bool, nullable: false, description: timestamp_ms 是否由帧率与抽帧步长估计}
-  - {name: timebase_source, type: string, nullable: false, description: 时间计算依据。估计失败时为 unavailable}
-  - {name: global_timestamp_ms, type: float, nullable: true, description: 绝对采集时间。目录名未核实，历史数据中保持为空}
-  - {name: local_track_id, type: int, nullable: true, description: 单摄像头局部轨迹 ID。检测框没有轨迹时为空}
-  - {name: global_track_id, type: int, nullable: true, description: 当前版本采用的全局 ID，只在本序列本版本内有效}
-  - {name: original_global_track_id, type: int, nullable: true, description: 人工修正前的全局 ID。没有修正版本时为空}
-  - {name: class_name, type: string, nullable: true, description: 映射成功时为七类标准名，否则保留原始类别}
+  - {name: site_id, type: string, nullable: false, description: 路口编号}
+  - {name: sequence_id, type: string, nullable: false, description: 视频序列编号，按照时间编号}
+  - {name: source_version, type: string, nullable: false, description: 同一序列上的处理版本，例如sam3_aligned、sam3_manual_gid、detr_car}
+  - {name: camera_id, type: string, nullable: false, description: 摄像头编号，如R39_Aw_CamS}
+  - {name: frame_index, type: int, nullable: false, description: 抽帧后的帧编号，从0开始}
+  - {name: source_frame_index, type: int, nullable: true, description: 估计的原始视频帧号}
+  - {name: timestamp_ms, type: float, nullable: true, description: 序列内相对时间，单位毫秒}
+  - {name: timestamp_estimated, type: bool, nullable: false, description: timestamp_ms是否由帧率与抽帧步长估计}
+  - {name: timebase_source, type: string, nullable: false, description: 时间计算依据}
+  - {name: global_timestamp_ms, type: float, nullable: true, description: 绝对采集时间}
+  - {name: local_track_id, type: int, nullable: true, description: 单摄像头局部轨迹ID。检测框没有轨迹时为空}
+  - {name: global_track_id, type: int, nullable: true, description: 当前版本采用的全局ID，只在所在序列本版本内有效}
+  - {name: original_global_track_id, type: int, nullable: true, description: 人工修正前的全局ID。没有修正版本时为空}
+  - {name: class_name, type: string, nullable: true, description: 目标类别名}
   - {name: class_name_raw, type: string, nullable: true, description: 原始类别字符串}
-  - {name: class_id, type: int, nullable: true, description: 七类编号。未映射时为空，禁止把缺失置信度或外部类别号填进来}
-  - {name: class_mapping_status, type: string, nullable: false, description: mapped 或 unmapped}
-  - {name: score, type: float, nullable: true, description: 检测置信度。原始记录没有该字段时为空，不填 1.0}
-  - {name: bbox_xyxy, type: "float[4]", nullable: true, description: "图像像素框 [x1, y1, x2, y2]。没有二维框时为空"}
-  - {name: pixel_centroid, type: "float[2]", nullable: true, description: "像素质心 [x, y]。原始记录没有时为空"}
-  - {name: world_position, type: object, nullable: true, description: 已确认含义的路面坐标。坐标系未核实的三维点不写入此字段}
-  - {name: coordinate_frame, type: string, nullable: true, description: world_position 或几何的坐标系名称。未知时为 unknown 或 unverified_assumed_ground_plane，没有几何时为空}
-  - {name: geometry_3d, type: object, nullable: true, description: 原始三维信息的紧凑保留，不含八个角点。角点仍在原始文件中}
-  - {name: source_file, type: string, nullable: false, description: 相对 data/raw 或配置根的原始文件路径}
+  - {name: class_id, type: int, nullable: true, description: 目标类别编号。未映射时为空}
+  - {name: class_mapping_status, type: string, nullable: false, description: 类别映射mapped或unmapped}
+  - {name: score, type: float, nullable: true, description: 检测置信度。原始记录没有该字段时为空}
+  - {name: bbox_xyxy, type: "float[4]", nullable: true, description: "图像像素框[x1, y1, x2, y2]。没有二维框时为空"}
+  - {name: pixel_centroid, type: "float[2]", nullable: true, description: "像素中心[x, y]。原始记录没有时为空"}
+  - {name: world_position, type: object, nullable: true, description: 路面坐标}
+  - {name: coordinate_frame, type: string, nullable: true, description: world_position或几何的坐标系名称}
+  - {name: geometry_3d, type: object, nullable: true, description: 原始三维信息}
+  - {name: source_file, type: string, nullable: false, description: 相对data/raw或配置根的原始文件路径}
   - {name: source_record_index, type: int, nullable: false, description: 原始文件中的记录序号，用于回溯}
-  - {name: record_uid, type: string, nullable: false, description: 序列、版本、相机、帧、局部 ID 与同帧序号组成的观测标识}
-  - {name: quality_flags, type: "string[]", nullable: false, description: 质量标记。空列表表示本条没有触发规则}
-  - {name: manual_fix, type: bool, nullable: false, description: 全局 ID 是否相对自动关联结果被人工修改}
-  - {name: source_label, type: string, nullable: true, description: 原始 label，例如 car:10}
-  - {name: appearance_ref, type: object, nullable: true, description: 外观特征文件中的索引。本轮不复制特征向量}
-  - {name: detection_id, type: string, nullable: true, description: 现有流水线检测框编号。历史 JSON 没有该字段时为空}
-  - {name: plate, type: string, nullable: true, description: 车牌号。历史 JSON 与未识别时为空}
+  - {name: record_uid, type: string, nullable: false, description: 序列、版本、相机、帧、局部ID与同帧序号组成的观测标识}
+  - {name: quality_flags, type: "string[]", nullable: false, description: 质量标记}
+  - {name: manual_fix, type: bool, nullable: false, description: 全局ID是否相对自动关联结果被人工修改}
+  - {name: source_label, type: string, nullable: true, description: 原始label，例如 car:10}
+  - {name: appearance_ref, type: object, nullable: true, description: 外观特征文件中的索引}
+  - {name: detection_id, type: string, nullable: true, description: 现有流水线检测框编号。历史JSON没有该字段时为空}
+  - {name: plate, type: string, nullable: true, description: 车牌号。历史JSON与未识别时为空}
 
 tracklet_fields:
   - {name: sequence_id, type: string, nullable: false, description: 采集序列}
   - {name: source_version, type: string, nullable: false, description: 数据版本}
   - {name: camera_id, type: string, nullable: false, description: 单摄像头轨迹所属相机}
-  - {name: local_track_id, type: int, nullable: false, description: 局部轨迹 ID}
-  - {name: global_track_id, type: int, nullable: true, description: 该局部轨迹对应的全局 ID。同轨迹出现多个全局 ID 时为空并记冲突}
-  - {name: original_global_track_id, type: int, nullable: true, description: 修正前全局 ID}
+  - {name: local_track_id, type: int, nullable: false, description: 局部轨迹ID}
+  - {name: global_track_id, type: int, nullable: true, description: 该局部轨迹对应的全局ID。同轨迹出现多个全局ID时为空并记冲突}
+  - {name: original_global_track_id, type: int, nullable: true, description: 修正前全局ID}
   - {name: class_name, type: string, nullable: true, description: 轨迹类别。多个原始类别并存时取首次出现的映射结果，并打标记}
   - {name: class_name_raw, type: string, nullable: true, description: 首次出现的原始类别}
   - {name: class_id, type: int, nullable: true, description: 映射后的类别编号}
@@ -49,7 +49,7 @@ tracklet_fields:
   - {name: start_timestamp_ms, type: float, nullable: true, description: 起始帧相对时间}
   - {name: end_timestamp_ms, type: float, nullable: true, description: 结束帧相对时间}
   - {name: observation_count, type: int, nullable: false, description: 框记录数，不是起止帧差加一}
-  - {name: unique_frame_count, type: int, nullable: false, description: 去重后的帧数。同一帧多个框时小于 observation_count}
+  - {name: unique_frame_count, type: int, nullable: false, description: 去重后的帧数}
   - {name: source_files, type: "string[]", nullable: false, description: 来源文件}
   - {name: quality_flags, type: "string[]", nullable: false, description: 轨迹级质量标记}
   - {name: manual_fix, type: bool, nullable: false, description: 是否包含人工修正}
@@ -57,19 +57,19 @@ tracklet_fields:
 global_track_fields:
   - {name: sequence_id, type: string, nullable: false, description: 采集序列}
   - {name: source_version, type: string, nullable: false, description: 数据版本}
-  - {name: global_track_id, type: int, nullable: false, description: 本序列本版本内的全局 ID}
+  - {name: global_track_id, type: int, nullable: false, description: 本序列本版本内的全局ID}
   - {name: class_name, type: string, nullable: true, description: 全局轨迹类别。类别冲突时仍保留首次类别并打标记}
   - {name: class_names_raw, type: "string[]", nullable: false, description: 关联到的原始类别集合}
   - {name: camera_ids, type: "string[]", nullable: false, description: 出现过的相机}
-  - {name: local_track_ids, type: "string[]", nullable: false, description: 相机与局部 ID 的对应，格式 camera:local_id}
+  - {name: local_track_ids, type: "string[]", nullable: false, description: 相机与局部ID的对应，格式camera:local_id}
   - {name: start_frame, type: int, nullable: false, description: 已观测最小帧}
   - {name: end_frame, type: int, nullable: false, description: 已观测最大帧}
   - {name: start_timestamp_ms, type: float, nullable: true, description: 起始相对时间}
   - {name: end_timestamp_ms, type: float, nullable: true, description: 结束相对时间}
   - {name: observation_count, type: int, nullable: false, description: 框记录数}
-  - {name: unique_frame_count, type: int, nullable: false, description: 跨相机按帧编号去重后的数量，不表示已经证明时钟同步}
+  - {name: unique_frame_count, type: int, nullable: false, description: 跨相机按帧编号去重后的数量}
   - {name: camera_observation_counts, type: object, nullable: false, description: 各相机框数量}
-  - {name: original_global_track_ids, type: "int[]", nullable: false, description: 合并进来的修正前全局 ID}
+  - {name: original_global_track_ids, type: "int[]", nullable: false, description: 合并进来的修正前全局ID}
   - {name: source_files, type: "string[]", nullable: false, description: 来源文件}
   - {name: quality_flags, type: "string[]", nullable: false, description: 全局轨迹质量标记}
   - {name: manual_fix, type: bool, nullable: false, description: 组成该全局轨迹的局部轨迹是否存在人工修正}

@@ -64,20 +64,23 @@ def _camera(record, length, width):
 
 
 class CleaningTest(unittest.TestCase):
-    def test_category_mapping_keeps_unknown_classes(self):
+    def test_category_mapping(self):
         mapping = load_categories()["mappings"]
-        name, class_id, status, _flags = apply_category("car", mapping)
-        self.assertEqual((name, class_id, status), ("Car", 0, "mapped"))
-        name, class_id, status, flags = apply_category("motorcycle", mapping)
-        self.assertEqual(name, "motorcycle")
+        expected = {
+            "car": ("Car", 0),
+            "truck": ("Car", 0),
+            "person": ("Pedestrian", 6),
+            "motorcycle": ("ScooterRider", 4),
+            "bicycle": ("Cyclist", 5),
+        }
+        for raw, (name, class_id) in expected.items():
+            mapped, mapped_id, status, flags = apply_category(raw, mapping)
+            self.assertEqual((mapped, mapped_id, status), (name, class_id, "mapped"))
+            self.assertNotIn("class_unmapped", flags)
+        name, class_id, status, flags = apply_category("id", mapping)
+        self.assertEqual(name, "id")
         self.assertIsNone(class_id)
         self.assertIn("class_unmapped", flags)
-        for raw in ("bicycle", "truck", "person"):
-            mapped, _class_id, _status, _flags = apply_category(raw, mapping)
-            if raw == "person":
-                self.assertEqual(mapped, "Pedestrian")
-            else:
-                self.assertEqual(mapped, raw)
 
     def test_timebase_uses_stride_and_stays_empty_without_evidence(self):
         source_frame, timestamp, estimated, _source = stamp_frame(1, _timebase())
@@ -160,8 +163,9 @@ class CleaningTest(unittest.TestCase):
             self.assertIn("invalid_bbox", invalid_rows[0]["quality_flags"])
             self.assertEqual(invalid_rows[0]["bbox_xyxy"], [5.0, 5.0, 5.0, 9.0])
             truck_row = next(row for row in rows if row["class_name_raw"] == "truck")
-            self.assertEqual(truck_row["class_name"], "truck")
-            self.assertIsNone(truck_row["class_id"])
+            self.assertEqual(truck_row["class_name"], "Car")
+            self.assertEqual(truck_row["class_id"], 0)
+            self.assertEqual(truck_row["class_mapping_status"], "mapped")
             huge = next(row for row in collision if "geometry_size_implausible" in row["quality_flags"])
             self.assertEqual(huge["coordinate_frame"], "unknown")
             self.assertTrue((quarantine / "conflicts.jsonl").exists())

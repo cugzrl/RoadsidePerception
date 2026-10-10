@@ -75,6 +75,10 @@ def write_schema_doc(path: Path) -> None:
         "",
         "完整角点仍留在原始 JSON。统一文件里的 `geometry_3d` 只保留中心、尺寸和地面点，并标记 `corners_stored: false`。",
         "",
+        "### 类别映射",
+        "",
+        "`class_name_raw` 保留原始类别。映射后的 `class_name` 和 `class_id` 对齐 RD-DETR 七类：`car` 与 `truck` 为 Car（0），`bus` 为 Bus（2），`person` 为 Pedestrian（6），`motorcycle` 为 ScooterRider（4），`bicycle` 为 Cyclist（5）。占位类别 `id` 无法对应，`class_id` 为空。",
+        "",
         "## 观测字段",
         "",
         "| 字段 | 类型 | 可空 | 含义 |",
@@ -283,6 +287,10 @@ def write_quality(path: Path) -> None:
             if item.get("class_counts_raw"):
                 pairs = "，".join(f"{key} {value}" for key, value in item["class_counts_raw"].items())
                 lines.append(f"原始类别：{pairs}。")
+                lines.append("")
+            if item.get("class_counts_mapped"):
+                pairs = "，".join(f"{key} {value}" for key, value in item["class_counts_mapped"].items())
+                lines.append(f"映射后类别：{pairs}。")
                 lines.append("")
             siblings = item.get("sibling_files") or {}
             for label, check in siblings.items():

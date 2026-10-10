@@ -25,14 +25,20 @@ mappings:
     class_id: 6
     note: 语义对应Pedestrian
   truck:
-    status: unmapped
-    note: 七类中没有Truck，不并入Bus或Car
+    status: mapped
+    class_name: Car
+    class_id: 0
+    note: 映射为 Car
   motorcycle:
-    status: unmapped
-    note: 不等于ScooterRider
+    status: mapped
+    class_name: ScooterRider
+    class_id: 4
+    note: 按约定映射为ScooterRider
   bicycle:
-    status: unmapped
-    note: 不等于Cyclist
+    status: mapped
+    class_name: Cyclist
+    class_id: 5
+    note: 按约定映射为Cyclist
   id:
     status: unmapped
     note: 原始类别缺失时的占位符

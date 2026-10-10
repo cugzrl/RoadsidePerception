@@ -86,6 +86,7 @@ data/normalized/sequences/<sequence_id>/versions/<source_version>/global_tracks.
 - `camera_box_3d` 的长宽不符合普通车辆尺寸，坐标系标记为 `unknown`
 - 轨迹地面点使用假定z=0，不写入 `world_position`
 - 同一局部ID在同一帧可能对应多个不同的框
-- `truck`、`motorcycle`、`bicycle` 和占位类别 `id` 没有并入七类标准名
+- `truck` 映射为 Car，`motorcycle` 映射为ScooterRider，`bicycle` 映射为Cyclist，原始类别仍保留在 `class_name_raw`
+- 占位类别 `id` 无法对应七类，保持原名且 `class_id` 为空
 - `split_config.yaml` 与视频帧率冲突，不作为时间依据
 - `R39_new/multi_view_global_ids.mp4` 无法读取

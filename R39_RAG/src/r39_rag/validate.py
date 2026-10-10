@@ -79,8 +79,15 @@ def validate_normalized() -> dict[str, Any]:
                     errors.append(f"{observations}:{line_number} 将缺失置信度写成了 {row['score']}")
                 if version.startswith("sam3") and row["world_position"] is not None:
                     errors.append(f"{observations}:{line_number} 把未核实坐标写入了 world_position")
-                if row["class_name_raw"] in {"motorcycle", "bicycle", "truck", "id"} and row["class_id"] is not None:
-                    errors.append(f"{observations}:{line_number} 错误映射了 {row['class_name_raw']}")
+                expected_class = {
+                    "truck": ("Car", 0),
+                    "motorcycle": ("ScooterRider", 4),
+                    "bicycle": ("Cyclist", 5),
+                }.get(row["class_name_raw"])
+                if expected_class and (row["class_name"], row["class_id"]) != expected_class:
+                    errors.append(f"{observations}:{line_number} 类别映射不符合约定 {row['class_name_raw']}")
+                if row["class_name_raw"] == "id" and row["class_id"] is not None:
+                    errors.append(f"{observations}:{line_number} 占位类别 id 被写入了 class_id")
             expected = metadata["versions"][version]["written_observations"]
             if count != expected:
                 errors.append(f"{sequence_id}/{version} 行数 {count} 与记录 {expected} 不一致")

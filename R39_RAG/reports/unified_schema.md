@@ -45,26 +45,30 @@
 
 完整角点仍留在原始 JSON。统一文件里的 `geometry_3d` 只保留中心、尺寸和地面点，并标记 `corners_stored: false`。
 
+### 类别映射
+
+`class_name_raw` 保留原始类别。映射后的 `class_name` 和 `class_id` 对齐 RD-DETR 七类：`car` 与 `truck` 为 Car（0），`bus` 为 Bus（2），`person` 为 Pedestrian（6），`motorcycle` 为 ScooterRider（4），`bicycle` 为 Cyclist（5）。占位类别 `id` 无法对应，`class_id` 为空。
+
 ## 观测字段
 
 | 字段 | 类型 | 可空 | 含义 |
 | --- | --- | --- | --- |
-| `site_id` | string | 否 | 路口编号。当前数据均为 R39，不拿它代替采集序列 |
-| `sequence_id` | string | 否 | 一次独立视频采集的标识。不同日期、不同切段不能共用 |
-| `source_version` | string | 否 | 同一序列上的处理版本，例如 sam3_aligned、sam3_manual_gid、detr_car |
-| `camera_id` | string | 否 | 摄像头编号，如 R39_Aw_CamS |
-| `frame_index` | int | 否 | 抽帧后的帧编号，从 0 开始。不是原始视频帧号 |
+| `site_id` | string | 否 | 路口编号 |
+| `sequence_id` | string | 否 | 视频序列编号，按照时间编号 |
+| `source_version` | string | 否 | 同一序列上的处理版本，例如sam3_aligned、sam3_manual_gid、detr_car |
+| `camera_id` | string | 否 | 摄像头编号，如R39_Aw_CamS |
+| `frame_index` | int | 否 | 抽帧后的帧编号，从0开始 |
 | `source_frame_index` | int | 是 | 估计的原始视频帧号。无法确认抽帧起点时为空 |
-| `timestamp_ms` | float | 是 | 序列内相对时间，单位毫秒。没有可靠依据时为空，不使用固定 20 FPS 填值 |
-| `timestamp_estimated` | bool | 否 | timestamp_ms 是否由帧率与抽帧步长估计 |
-| `timebase_source` | string | 否 | 时间计算依据。估计失败时为 unavailable |
+| `timestamp_ms` | float | 是 | 序列内相对时间，单位毫秒 |
+| `timestamp_estimated` | bool | 否 | timestamp_ms是否由帧率与抽帧步长估计 |
+| `timebase_source` | string | 否 | 时间计算依据。估计失败时为unavailable |
 | `global_timestamp_ms` | float | 是 | 绝对采集时间。目录名未核实，历史数据中保持为空 |
-| `local_track_id` | int | 是 | 单摄像头局部轨迹 ID。检测框没有轨迹时为空 |
-| `global_track_id` | int | 是 | 当前版本采用的全局 ID，只在本序列本版本内有效 |
-| `original_global_track_id` | int | 是 | 人工修正前的全局 ID。没有修正版本时为空 |
-| `class_name` | string | 是 | 映射成功时为七类标准名，否则保留原始类别 |
+| `local_track_id` | int | 是 | 单摄像头局部轨迹ID。检测框没有轨迹时为空 |
+| `global_track_id` | int | 是 | 当前版本采用的全局ID，只在所在序列本版本内有效 |
+| `original_global_track_id` | int | 是 | 人工修正前的全局ID。没有修正版本时为空 |
+| `class_name` | string | 是 | 目标类别名 |
 | `class_name_raw` | string | 是 | 原始类别字符串 |
-| `class_id` | int | 是 | 七类编号。未映射时为空，禁止把缺失置信度或外部类别号填进来 |
+| `class_id` | int | 是 | 目标类别编号。未映射时为空 |
 | `class_mapping_status` | string | 否 | mapped 或 unmapped |
 | `score` | float | 是 | 检测置信度。原始记录没有该字段时为空，不填 1.0 |
 | `bbox_xyxy` | float[4] | 是 | 图像像素框 [x1, y1, x2, y2]。没有二维框时为空 |
