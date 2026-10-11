@@ -45,3 +45,6 @@ R39_RAG/data/quarantine/
 R39_RAG/tests/
 R39_RAG/reports/
 
+# 第三方源码本地 vendoring，不入库
+third_party/
+
