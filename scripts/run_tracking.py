@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
         default=Path(sys.executable),
     )
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--stmc-override", nargs="*", default=[], help="追加给 STMC 的 Hydra 覆盖")
     return parser.parse_args()
 
 
@@ -118,6 +119,7 @@ def run_stmc(
         "visuals.store_files=false",
         f"device={args.device}",
         f"hydra.run.dir={stmc_output / 'hydra'}",
+        *args.stmc_override,
     ]
     subprocess.run(command, cwd=stmc_root, check=True)
     result_path = stmc_output / "Roadside" / "tracking_results.json"

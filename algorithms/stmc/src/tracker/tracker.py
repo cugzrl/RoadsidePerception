@@ -56,6 +56,13 @@ class Tracker:
         }
 
         self.cumulative_execution_time = 0
+        self.position_history = {}
+        self.knowledge = None
+        knowledge_cfg = self.cfg.get("knowledge") if hasattr(self.cfg, "get") else None
+        if knowledge_cfg is not None and bool(knowledge_cfg.get("enabled", False)):
+            from .knowledge_prior import KnowledgePrior
+
+            self.knowledge = KnowledgePrior(knowledge_cfg)
 
     def step(self, sample):
         """
@@ -83,10 +90,13 @@ class Tracker:
         self.latency.append(t1 - t0)
 
         self._sanitize()
+        self._record_positions()
 
         rresults = self.get_result()
 
         self.predict()
+        if self.knowledge is not None:
+            self.knowledge.flush()
 
         presults = self.get_result()
 
@@ -362,6 +372,8 @@ class Tracker:
 
         if self.cfg.prematching.enabled:
             adj = self._apply_prematching(adj, tracks, iou_bias)
+        if self.knowledge is not None:
+            adj = self._apply_knowledge(adj, tracks)
 
         adj = self._finalize_adjacency_matrix(adj, penalty, tracks)
 
@@ -463,6 +475,70 @@ class Tracker:
                 adj[cur_idx, pen_track_idx_by_cam[cam][c]] += iou_bias
                 adj[pen_track_idx_by_cam[cam][c], cur_idx] += iou_bias
 
+        return adj
+
+    def _mean_bev(self, track: SuperTrack):
+        positions = track.positions_3d
+        finite = ~torch.isnan(positions).any(dim=-1)
+        if not bool(finite.any()):
+            return None
+        return positions[finite].mean(dim=0).detach().cpu().numpy()
+
+    def _record_positions(self):
+        """记录已经完成关联的位置 供下一帧检索 不写入当前帧还没判定的检测"""
+        current = []
+        for track in self.tracks:
+            if track.label is None or track.state == TrackState.KILLED:
+                continue
+            point = self._mean_bev(track)
+            if point is None:
+                continue
+            history = self.position_history.setdefault(int(track.label), [])
+            frame = int(track.frame)
+            if history and history[-1][0] == frame:
+                history[-1] = (frame, point)
+            else:
+                history.append((frame, point))
+            if len(history) > 40:
+                del history[:-40]
+            current.append(int(track.label))
+        stale = [label for label in self.position_history if label not in current and label not in {
+            int(track.label) for track in self.tracks if track.label is not None and track.state == TrackState.LOST
+        }]
+        for label in stale:
+            self.position_history.pop(label, None)
+
+    def _apply_knowledge(self, adj: torch.Tensor, tracks: List[SuperTrack]) -> torch.Tensor:
+        """只改跨帧边 硬互斥留在后面的惩罚里"""
+        for left in range(len(tracks)):
+            for right in range(left + 1, len(tracks)):
+                older = tracks[left]
+                newer = tracks[right]
+                if older.frame == newer.frame:
+                    continue
+                if older.frame > newer.frame:
+                    older, newer = newer, older
+                if newer.frame != self.frame or newer.label is not None or older.label is None:
+                    continue
+                history = [
+                    point
+                    for frame, point in self.position_history.get(int(older.label), [])
+                    if frame < self.frame
+                ]
+                candidate = self._mean_bev(newer)
+                if candidate is None or len(history) == 0:
+                    continue
+                base = float(adj[left, right].item())
+                delta, _decision = self.knowledge.adjust(
+                    history,
+                    candidate,
+                    base,
+                    int(newer.frame - older.frame),
+                )
+                if delta == 0.0:
+                    continue
+                adj[left, right] = adj[left, right] + delta
+                adj[right, left] = adj[right, left] + delta
         return adj
 
     def _finalize_adjacency_matrix(self, adj: torch.Tensor, penalty: float, tracks: List[SuperTrack]) -> torch.Tensor:

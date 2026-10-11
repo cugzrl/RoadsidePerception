@@ -30,6 +30,18 @@ tracker:
     iou_bias: 0.60
     iou_threshold: 0.50
     prune_remaining: false
+  knowledge:
+    enabled: false
+    use_spatial: true
+    use_trajectory: true
+    use_topology: true
+    weight: 0.2
+    top_k: 5
+    prefix_frames: 20
+    min_prefix_points: 3
+    continuation_m: 8.0
+    min_score: 0.45
+    log_path: null
 
 preprocess:
   nms_thresh: 0.6

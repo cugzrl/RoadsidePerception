@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from r39_rag.config import PROJECT_ROOT, load_knowledge
+from r39_rag.knowledge.online import LaneIndex, TrustGrid, link_decision, match_prefix
 from r39_rag.knowledge.spatial import cell_index
 from r39_rag.knowledge.store import connect, load_arrays
 from r39_rag.knowledge.trajectory import resample_path
@@ -29,6 +30,8 @@ class KnowledgeBase:
             raise FileNotFoundError("知识库文件不存在，请先构建")
         self.connection = connect(database)
         self.arrays = load_arrays(arrays)
+        self.lanes = LaneIndex.load()
+        self.trust = TrustGrid.load()
 
     def close(self) -> None:
         self.connection.close()
@@ -146,3 +149,76 @@ class KnowledgeBase:
             "coordinate_frame": self.config["coordinate_frame"],
             "note": "分数由历史路径形状距离换算，同时给出支持轨迹数和可信度，不是未来位置的确定预测",
         }
+
+    def query_prefix(self, points: list[list[float]], top_k: int = 5) -> dict[str, Any]:
+        """用已经看到的轨迹前缀对齐典型路径中的一段"""
+        array = np.asarray(points, dtype=np.float64)
+        stored = np.asarray(self.arrays["prototypes"])
+        sigma = float(self.config["retrieval_sigma_m"])
+        matches = match_prefix(array, stored, sigma_m=sigma, top_k=top_k)
+        rows = {int(row["prototype_id"]): row for row in self.connection.execute("SELECT * FROM prototypes")}
+        detailed = []
+        for item in matches:
+            row = rows.get(item["prototype_id"])
+            if row is None:
+                continue
+            detailed.append(
+                {
+                    **item,
+                    "kind": row["kind"],
+                    "support_tracks": row["support_tracks"],
+                    "support_sequences": json.loads(row["support_sequences"]),
+                    "confidence": row["confidence"],
+                    "median_speed_m_s": row["median_speed"],
+                    "exemplar_sequence": row["exemplar_sequence"],
+                }
+            )
+        min_score = 0.45
+        reliable = bool(detailed) and detailed[0]["score"] >= min_score
+        return {
+            "reliable": reliable,
+            "matches": detailed if reliable else [],
+            "rejected_matches": [] if reliable else detailed[:top_k],
+            "reason": None if reliable else "历史路径匹配不足 不给出后续区域",
+            "note": "只比较已经观测到的前缀 分数和支持轨迹数都要保留 不是确定的未来轨迹",
+        }
+
+    def query_region(self, x_value: float, y_value: float) -> dict[str, Any]:
+        point = np.array([x_value, y_value], dtype=np.float64)
+        lane = self.lanes.locate(point)
+        spatial = self.query_spatial(x_value, y_value)
+        trust = self.trust.query(point) if self.trust is not None else {"found": False, "level": "样本不足", "neutral": True}
+        next_lanes = []
+        if lane is not None:
+            for child in self.lanes.successors.get(lane["lane_id"], [])[:8]:
+                next_lanes.append(child)
+        return {
+            "lane": None
+            if lane is None
+            else {
+                "lane_id": lane["lane_id"],
+                "arm": lane["arm"],
+                "role": lane["role"],
+                "distance_m": lane["distance_m"],
+            },
+            "next_lanes": next_lanes,
+            "spatial_cell": spatial,
+            "trust": trust,
+            "note": "共同观测和时序转移在 spatial_cell 的来源统计里分开存放 可信度不是关联准确率",
+        }
+
+    def query_link(self, history: list[list[float]], candidate: list[float], frame_gap: int = 1) -> dict[str, Any]:
+        stored = np.asarray(self.arrays["prototypes"])
+        return link_decision(
+            np.asarray(history, dtype=np.float64),
+            np.asarray(candidate, dtype=np.float64),
+            stored,
+            self.lanes,
+            self.trust,
+            sigma_m=float(self.config["retrieval_sigma_m"]),
+            top_k=5,
+            min_score=0.45,
+            continuation_m=8.0,
+            min_points=3,
+            frame_gap=frame_gap,
+        )

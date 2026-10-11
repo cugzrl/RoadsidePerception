@@ -55,6 +55,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trail-seconds", type=float, default=2.0)
     parser.add_argument("--min-path-m", type=float, default=8.0)
     parser.add_argument("--max-step-m", type=float, default=15.0, help="相邻点超过该距离就断开，避免远处单应把轨迹拉成直线")
+    parser.add_argument("--start-frame", type=int, default=None)
+    parser.add_argument("--end-frame", type=int, default=None)
     return parser.parse_args()
 
 
@@ -357,6 +359,10 @@ def main() -> int:
         return 0
     graph = LaneMap.load()
     trails, by_frame, frames = limit_range(trails, by_frame, graph.center, args.radius_m)
+    if args.start_frame is not None or args.end_frame is not None:
+        start = 0 if args.start_frame is None else args.start_frame
+        end = 10**9 if args.end_frame is None else args.end_frame
+        frames = [frame for frame in frames if start <= frame <= end]
     view, directions = make_r39_view(graph, args.width, args.height, args.radius_m)
     basemap = BEVBasemap(graph, view)
     basemap.render()

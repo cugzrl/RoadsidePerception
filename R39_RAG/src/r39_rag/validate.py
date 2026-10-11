@@ -120,6 +120,10 @@ def validate_normalized() -> dict[str, Any]:
         "pipeline/bev_map.py",
         "scripts/visualize_bev.py",
         "scripts/run_pipeline.py",
+        "scripts/run_tracking.py",
+        "algorithms/stmc/src/tracker/tracker.py",
+        "algorithms/stmc/src/tracker/knowledge_prior.py",
+        "algorithms/stmc/conf/experiment/R39.yaml",
     }
     touched = []
     for line in git:
