@@ -42,4 +42,6 @@ models/license_plate/**/*.onnx
 R39_RAG/data/raw/
 R39_RAG/data/normalized/
 R39_RAG/data/quarantine/
+R39_RAG/tests/
+R39_RAG/reports/
 
