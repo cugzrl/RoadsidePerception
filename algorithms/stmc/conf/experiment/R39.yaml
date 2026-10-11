@@ -30,6 +30,16 @@ tracker:
     iou_bias: 0.60
     iou_threshold: 0.50
     prune_remaining: false
+  # 默认关闭 打开后失效相机不再进入 BEV 平均
+  position_state:
+    active_cameras_only: false
+  # 默认关闭 连续帧仍走 prematch 这里只补漏检 1 到 max_gap 帧
+  short_recovery:
+    enabled: false
+    max_gap: 3
+    iou_bonus: 0.60
+    match_iou: 0.50
+    reject_iou: 0.30
   knowledge:
     enabled: false
     use_spatial: true

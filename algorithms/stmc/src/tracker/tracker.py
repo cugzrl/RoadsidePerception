@@ -1,3 +1,5 @@
+import json
+import os
 import statistics
 import time
 from typing import Any, List, Optional, Tuple
@@ -8,7 +10,7 @@ from omegaconf import DictConfig
 from scipy.optimize import linear_sum_assignment
 from torchvision.ops import box_iou
 
-from .similarities import batch_bev_distance, batch_cosine_similarity, batched_box_iou
+from .similarities import batch_bev_distance, batch_cosine_similarity, batched_box_iou, cosine_similarity
 from .solver import multicut, scale_weights
 from .supertrack import SuperTrack, TrackState
 
@@ -57,6 +59,10 @@ class Tracker:
 
         self.cumulative_execution_time = 0
         self.position_history = {}
+        position_cfg = self.cfg.get("position_state") if hasattr(self.cfg, "get") else None
+        self.active_cameras_only = bool(position_cfg.get("active_cameras_only", False)) if position_cfg is not None else False
+        SuperTrack.use_active_positions = self.active_cameras_only
+        self.short_recovery = self.cfg.get("short_recovery") if hasattr(self.cfg, "get") else None
         self.knowledge = None
         knowledge_cfg = self.cfg.get("knowledge") if hasattr(self.cfg, "get") else None
         if knowledge_cfg is not None and bool(knowledge_cfg.get("enabled", False)):
@@ -135,12 +141,26 @@ class Tracker:
         if len(relevant_tracks) == 0:
             return [], []
 
-        features = torch.stack([track.p_features for track in relevant_tracks])  # (n_tracks, n_cams, feature_dim)
-        positions = torch.stack([track.p_positions for track in relevant_tracks])  # (n_tracks, n_cams, 2)
-        boxes = torch.stack([track.tlbr for track in relevant_tracks])  # (n_tracks, n_cams, 4)
+        timed = os.environ.get("STMC_TIME") == "1"
+        clock = time.perf_counter if timed else None
+        mark = clock() if timed else 0.0
+        features, positions, boxes, where = self._association_inputs(relevant_tracks)
+        if timed:
+            spans = {"inputs": clock() - mark}
+            mark = clock()
 
         # compute (n_tracks) x (n_tracks) similarity matrix
         similarities = self._compute_similarities(features, positions, boxes)
+        if timed:
+            spans["similar"] = clock() - mark
+            mark = clock()
+        if where is not None:
+            appearance, position, iou_sim = similarities
+            appearance, position = self._fill_unshared_cameras(appearance, position, features, positions, where)
+            similarities = (appearance, position, iou_sim)
+        if timed:
+            spans["fill"] = clock() - mark
+            mark = clock()
 
         # compute weighted graph
         rescale_thresh = self.cfg.matching.rescale_threshold
@@ -154,7 +174,19 @@ class Tracker:
             iou_bias,
             reid_decay=self.cfg.matching.reid_decay,
         )
+        if timed:
+            spans["graph"] = clock() - mark
+            mark = clock()
         labels = multicut(edge_index, edge_weights, self.solver_opts)
+        if timed:
+            spans["cut"] = clock() - mark
+            print(
+                f"STMC_TIME frame {self.frame} n {len(relevant_tracks)} "
+                + " ".join(f"{key} {value:.3f}" for key, value in spans.items()),
+                flush=True,
+            )
+        if os.environ.get("STMC_DIAG") == "1" and self.frame in (102, 103, 116, 117, 118):
+            self._write_diag(relevant_tracks, similarities, labels)
 
         matched_tracks, unmatched_tracks = self._match(relevant_tracks, labels, low_conf_indices=low_conf_indices)
 
@@ -372,6 +404,7 @@ class Tracker:
 
         if self.cfg.prematching.enabled:
             adj = self._apply_prematching(adj, tracks, iou_bias)
+        adj = self._apply_short_recovery(adj, tracks)
         if self.knowledge is not None:
             adj = self._apply_knowledge(adj, tracks)
 
@@ -477,6 +510,172 @@ class Tracker:
 
         return adj
 
+    def _write_diag(self, tracks: List[SuperTrack], similarities, labels: torch.Tensor) -> None:
+        """只在 STMC_DIAG=1 时写出指定帧的关联边 不改变权重"""
+        appearance, position, _iou = similarities
+        rescale_thresh = self.cfg.matching.rescale_threshold
+        dist_thresh = self.cfg.matching.distance_threshold
+        iou_bias = self.cfg.prematching.iou_bias if self.cfg.prematching.enabled else 0
+        adj = self._initialize_adjacency_matrix(
+            similarities, tracks, self.cfg.matching.reid_decay, rescale_thresh, dist_thresh
+        )
+        if self.cfg.prematching.enabled:
+            adj = self._apply_prematching(adj, tracks, iou_bias)
+        adj = self._apply_short_recovery(adj, tracks)
+        base = adj.clone()
+        adj = self._finalize_adjacency_matrix(adj, -100, tracks)
+        path = os.environ.get("STMC_DIAG_PATH")
+        if not path:
+            return
+        rows = []
+        label_list = labels.detach().cpu().tolist()
+        for left in range(len(tracks)):
+            for right in range(left + 1, len(tracks)):
+                older, newer = tracks[left], tracks[right]
+                if older.frame == newer.frame:
+                    continue
+                if older.frame > newer.frame:
+                    older, newer = newer, older
+                    left_i, right_i = right, left
+                else:
+                    left_i, right_i = left, right
+                if newer.frame != self.frame or newer.label is not None:
+                    continue
+                weight = float(adj[min(left, right), max(left, right)].item())
+                if abs(weight) < 1e-6 and abs(float(base[left_i, right_i].item())) < 0.05:
+                    continue
+                slots = []
+                for cam in range(self.n_cams):
+                    pos = older.positions_3d[cam].detach().cpu()
+                    slots.append(
+                        {
+                            "cam": cam,
+                            "bev": None if torch.isnan(pos).any() else [float(pos[0]), float(pos[1])],
+                            "where": bool(older.track_where[cam].item()),
+                            "inactive": int(older.inactive_since[cam].item()),
+                        }
+                    )
+                det = newer.positions_3d.detach().cpu()
+                finite = ~torch.isnan(det).any(dim=-1)
+                det_bev = None
+                if bool(finite.any()):
+                    point = det[finite][0]
+                    det_bev = [float(point[0]), float(point[1])]
+                rows.append(
+                    {
+                        "frame": int(self.frame),
+                        "old_label": None if older.label is None else int(older.label),
+                        "old_state": int(older.state),
+                        "old_frame": int(older.frame),
+                        "lost_since": int(older.lost_since),
+                        "old_slots": slots,
+                        "det_bev": det_bev,
+                        "det_class": newer.class_id,
+                        "old_class": older.class_id,
+                        "appearance": float(appearance[left_i, right_i].item()),
+                        "position_m": float(position[left_i, right_i].item()),
+                        "weight_before_penalty": float(base[left_i, right_i].item()),
+                        "weight": weight,
+                        "same_group": int(label_list[left]) == int(label_list[right]),
+                    }
+                )
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as file:
+            for row in rows:
+                file.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    def _association_inputs(self, tracks: List[SuperTrack]):
+        """默认仍用 phantomize 打开开关后只让 track_where 为真的相机进入距离和外观"""
+        boxes = torch.stack([track.tlbr for track in tracks])
+        if not self.active_cameras_only:
+            features = torch.stack([track.p_features for track in tracks])
+            positions = torch.stack([track.p_positions for track in tracks])
+            return features, positions, boxes, None
+        features = torch.stack([track.features for track in tracks]).clone()
+        positions = torch.stack([track.positions_3d for track in tracks]).clone()
+        where = torch.stack([track.track_where for track in tracks])
+        features[~where] = float("nan")
+        positions[~where] = float("nan")
+        return features, positions, boxes, where
+
+    def _fill_unshared_cameras(self, appearance, position, features, positions, where):
+        """没有共同有效相机时 用各自有效相机的均值做一次跨相机比较"""
+        counts = where.sum(dim=1).clamp(min=1).unsqueeze(-1).to(features.dtype)
+        feature_mean = torch.nan_to_num(features, nan=0.0).sum(dim=1) / counts
+        position_mean = torch.nan_to_num(positions, nan=0.0).sum(dim=1) / counts
+        fallback_appearance = cosine_similarity(feature_mean, feature_mean)
+        fallback_position = torch.norm(position_mean[:, None, :] - position_mean[None, :, :], dim=-1)
+        empty = where.sum(dim=1) == 0
+        fallback_appearance[empty, :] = float("nan")
+        fallback_appearance[:, empty] = float("nan")
+        fallback_position[empty, :] = float("nan")
+        fallback_position[:, empty] = float("nan")
+        appearance = torch.where(torch.isnan(appearance), fallback_appearance, appearance)
+        position = torch.where(torch.isnan(position), fallback_position, position)
+        return appearance, position
+
+    def _apply_short_recovery(self, adj: torch.Tensor, tracks: List[SuperTrack]) -> torch.Tensor:
+        """漏检 1 到 3 帧时 用最后真实框的预测 IoU 加分 图像对不上的近邻不加正边"""
+        cfg = self.short_recovery
+        if cfg is None or not bool(cfg.get("enabled", False)):
+            return adj
+        max_gap = int(cfg.get("max_gap", 3))
+        bonus = float(cfg.get("iou_bonus", 0.60))
+        match_iou = float(cfg.get("match_iou", 0.50))
+        reject_iou = float(cfg.get("reject_iou", 0.30))
+        current_idx = [index for index, track in enumerate(tracks) if track.frame == self.frame and track.label is None]
+        older_idx = []
+        for index, track in enumerate(tracks):
+            if track.label is None:
+                continue
+            missed = int(self.frame - track.frame) - 1
+            if 1 <= missed <= max_gap:
+                older_idx.append(index)
+        if not current_idx or not older_idx:
+            return adj
+        best = torch.full((len(current_idx), len(older_idx)), -1.0, device=adj.device)
+        last_real_frame = torch.stack([track.last_real_frame for track in tracks]).detach().cpu()
+        box_missing = torch.isnan(torch.stack([track.boxes for track in tracks])).any(dim=-1).detach().cpu()
+        for cam in range(self.n_cams):
+            current_rows = [row for row, index in enumerate(current_idx) if not bool(box_missing[index, cam])]
+            older_cols = [col for col, index in enumerate(older_idx) if int(last_real_frame[index, cam]) >= 0]
+            if not current_rows or not older_cols:
+                continue
+            current_boxes = torch.stack([tracks[current_idx[row]].tlbr[cam] for row in current_rows])
+            older_boxes = []
+            for col in older_cols:
+                older = tracks[older_idx[col]]
+                gap = int(self.frame - older.frame)
+                predicted = older.last_real_boxes[cam] + older.velocities_2d[cam] * gap
+                invalid = ((predicted[2] <= 0) | (predicted[3] <= 0)).view(1)
+                predicted = torch.where(invalid, older.last_real_boxes[cam].view(1, 4), predicted.view(1, 4)).view(4)
+                predicted_tlbr = predicted.clone()
+                predicted_tlbr[2] = predicted[0] + predicted[2]
+                predicted_tlbr[3] = predicted[1] + predicted[3]
+                older_boxes.append(predicted_tlbr)
+            overlap = box_iou(current_boxes, torch.stack(older_boxes))
+            for row_i, row in enumerate(current_rows):
+                best[row, older_cols] = torch.maximum(best[row, older_cols], overlap[row_i])
+        best_cpu = best.detach().cpu()
+        weight_cpu = adj.detach().cpu()
+        for row, left in enumerate(current_idx):
+            for col, right in enumerate(older_idx):
+                value = float(best_cpu[row, col])
+                if value < 0:
+                    continue
+                base_weight = float(weight_cpu[left, right])
+                if base_weight != base_weight:
+                    base_weight = 0.0
+                if value >= match_iou:
+                    updated = base_weight + bonus
+                elif value < reject_iou and base_weight > 0:
+                    updated = 0.0
+                else:
+                    continue
+                adj[left, right] = updated
+                adj[right, left] = updated
+        return adj
+
     def _mean_bev(self, track: SuperTrack):
         positions = track.positions_3d
         finite = ~torch.isnan(positions).any(dim=-1)
@@ -568,6 +767,8 @@ class Tracker:
 
         adj[same_time & same_supp] = penalty
         adj[class_mismatch] = penalty
+        if self.active_cameras_only:
+            adj = torch.nan_to_num(adj, nan=0.0)
         adj = adj * torch.triu(torch.ones_like(adj), diagonal=1)
 
         return adj

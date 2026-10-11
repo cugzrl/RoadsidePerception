@@ -359,6 +359,9 @@ def main() -> int:
         return 0
     graph = LaneMap.load()
     trails, by_frame, frames = limit_range(trails, by_frame, graph.center, args.radius_m)
+    present = sorted({int(frame["frame_index"]) for frame in result.get("frames", [])})
+    if present:
+        frames = list(range(present[0], present[-1] + 1))
     if args.start_frame is not None or args.end_frame is not None:
         start = 0 if args.start_frame is None else args.start_frame
         end = 10**9 if args.end_frame is None else args.end_frame

@@ -221,6 +221,28 @@ class TrustGrid:
         }
 
 
+def _motion_gate(points: np.ndarray, target: np.ndarray, frame_gap: int) -> dict[str, float | bool | None]:
+    """用时间间隔检查位移 静止前缀不能跳到远处 超速点不加分"""
+    step = target - points[-1]
+    step_m = float(np.linalg.norm(step))
+    dt = max(int(frame_gap), 1) / 20.0
+    speed = step_m / dt
+    span = max(len(points) - 1, 1) / 20.0
+    history_speed = float(np.linalg.norm(points[-1] - points[0])) / span
+    finite = bool(np.isfinite(target).all() and np.isfinite(points).all())
+    exploded = float(np.max(np.abs(np.concatenate([points[-1:], target.reshape(1, 2)])))) > 140.0
+    static_jump = history_speed < 1.5 and step_m > 6.0
+    too_fast = (not finite) or exploded or speed > 25.0
+    return {
+        "step_m": step_m,
+        "speed": speed,
+        "history_speed": history_speed,
+        "too_fast": too_fast,
+        "static_jump": static_jump,
+        "exploded": exploded,
+    }
+
+
 def continuation_distance(candidate: np.ndarray, continuation: list[list[float]]) -> float | None:
     if not continuation:
         return None
@@ -243,6 +265,8 @@ def link_decision(
     min_points: int,
     frame_gap: int = 1,
     cached_matches: list[dict[str, Any]] | None = None,
+    prototype_speeds: np.ndarray | None = None,
+    prototype_supports: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """判断新观测是否沿历史路径和道路继续 证据不足时 reliable 为假"""
     points = np.asarray(history, dtype=np.float64)
@@ -279,12 +303,20 @@ def link_decision(
         heading = destination["heading"]
         alignment = _cosine(motion, heading)
         result["lanes"]["heading_cos"] = alignment
-    step = target - points[-1]
-    step_m = float(np.linalg.norm(step))
+    motion = _motion_gate(points, target, frame_gap)
+    step_m = float(motion["step_m"])
     recent = points[-1] - points[0]
-    recent_cos = _cosine(recent, step)
-    hold_limit = min(25.0, continuation_m + 4.0 * max(frame_gap, 1))
+    recent_cos = _cosine(recent, target - points[-1])
+    dt = max(int(frame_gap), 1) / 20.0
+    hold_limit = min(12.0, 3.0 + 18.0 * dt)
     near_own_track = step_m <= hold_limit and (recent_cos is None or recent_cos >= -0.2)
+    on_lane = lanes is None or (source is not None and destination is not None)
+    if motion["too_fast"] or motion["exploded"]:
+        result["reasons"].append("位移速度不合理或 BEV 超出道路可用范围")
+        return result
+    if motion["static_jump"]:
+        result["reasons"].append("静止轨迹不能因为距离接近接到运动位置")
+        near_own_track = False
     if best is None or best["score"] < min_score:
         result["reasons"].append("没有足够相似的历史路径")
         if connected and step_m <= continuation_m * 2:
@@ -302,7 +334,24 @@ def link_decision(
     gap = continuation_distance(target, best["continuation"])
     result["continuation_gap_m"] = gap
     direction = best["direction_cos"]
+    support = None
+    proto_speed = None
+    if best is not None and prototype_supports is not None and 0 <= int(best["prototype_id"]) < len(prototype_supports):
+        support = float(prototype_supports[int(best["prototype_id"])])
+    if best is not None and prototype_speeds is not None and 0 <= int(best["prototype_id"]) < len(prototype_speeds):
+        proto_speed = float(prototype_speeds[int(best["prototype_id"])])
+        if not np.isfinite(proto_speed):
+            proto_speed = None
     on_path = gap is not None and gap <= continuation_m and (direction is None or direction >= 0.0)
+    if on_path and not on_lane:
+        result["reasons"].append("路径形状接近 但端点不在车道附近")
+        on_path = False
+    if on_path and support is not None and support < 3:
+        result["reasons"].append("历史路径的独立轨迹支持不足")
+        on_path = False
+    if on_path and proto_speed is not None and proto_speed > 4.0 and float(motion["history_speed"]) < 1.5:
+        result["reasons"].append("静止前缀不能沿快速历史路径加分")
+        on_path = False
     contradicts = direction is not None and direction < -0.2 and (gap is None or gap > continuation_m * 2)
     if on_path:
         result["reliable"] = True

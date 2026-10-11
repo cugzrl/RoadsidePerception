@@ -55,6 +55,12 @@ class SuperTrack:
 
         self.velocities_2d = torch.zeros((self.n_cams, 4), device=features.device)
         self.velocities_3d = torch.zeros((self.n_cams, 2), device=features.device)
+        # 最后一次真实检测框 预测不会覆盖这里
+        self.last_real_boxes = self.boxes.clone()
+        self.last_real_frame = torch.full((self.n_cams,), -1, device=features.device, dtype=torch.long)
+        finite = ~torch.isnan(self.boxes).any(dim=-1)
+        if self.frame is not None and bool(finite.any()):
+            self.last_real_frame[finite] = int(self.frame)
 
     @classmethod
     def empty(cls, n_cams, fdim, device):
@@ -111,9 +117,23 @@ class SuperTrack:
     def p_positions(self):
         return self.phantomize(self.positions_3d)
 
+    # 由 Tracker 按配置打开 默认保持原来的全槽位平均
+    use_active_positions = False
+
     @property
     def mean_positions_3d(self):
+        if self.use_active_positions:
+            masked = self.positions_3d.clone()
+            masked[~self.track_where] = float("nan")
+            if torch.isnan(masked).all():
+                return torch.nanmean(self.positions_3d, dim=0)
+            return torch.nanmean(masked, dim=0)
         return torch.nanmean(self.positions_3d, dim=0)
+
+    def remember_real(self, cam: int, frame: int) -> None:
+        """记下该相机刚写入的真实框 供短时重关联使用"""
+        self.last_real_boxes[cam] = self.boxes[cam].detach().clone()
+        self.last_real_frame[cam] = int(frame)
 
     @staticmethod
     def phantomize(tensor):
@@ -138,6 +158,7 @@ class SuperTrack:
                     self.track_where[cam] = True
                     self.queries[cam] = False
                     self.ticks[cam] = other.ticks[cam]
+                    self.remember_real(cam, other.frame)
                 else:
                     if not torch.isnan(other.features[cam]).any():
                         raise ValueError(f"Found violation of constraints for track update with {self}.")
@@ -165,6 +186,7 @@ class SuperTrack:
                         self.track_where[cam] = True
                         self.queries[cam] = False
                         self.ticks[cam] += 1
+                        self.remember_real(cam, other.frame)
                     else:
                         self.features[cam] = other.features[cam]
                         self.boxes[cam] = other.boxes[cam]
@@ -174,6 +196,7 @@ class SuperTrack:
                         self.track_where[cam] = True
                         self.queries[cam] = False
                         self.ticks[cam] = other.ticks[cam]
+                        self.remember_real(cam, other.frame)
                 else:
                     if self.track_where[cam]:
                         self.inactive_since[cam] += 1

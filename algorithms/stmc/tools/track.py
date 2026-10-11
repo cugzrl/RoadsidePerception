@@ -106,6 +106,9 @@ def main(cfg: DictConfig) -> None:
         stats = tracker.stats
         tw.set_postfix(stats, refresh=False)
         tw.update()
+        diag_max = os.environ.get("STMC_DIAG_MAX")
+        if diag_max and tracker.frame >= int(diag_max):
+            break
 
         if cfg.logging.wandb.enable:
             _stats_str_to_float = {k: float(v) for k, v in stats.items()}

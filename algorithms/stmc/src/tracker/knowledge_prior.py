@@ -9,6 +9,14 @@ from pathlib import Path
 import numpy as np
 
 
+def bounded_bonus(base_weight: float, bonus: float) -> float:
+    """加分有上限 负边最多补到 0 不能被知识抬成正边"""
+    bonus = max(0.0, float(bonus))
+    if base_weight >= 0.0:
+        return bonus
+    return min(bonus, -float(base_weight))
+
+
 def _load_api():
     root = Path(__file__).resolve().parents[4]
     rag_src = root / "R39_RAG" / "src"
@@ -42,6 +50,29 @@ class KnowledgePrior:
         knowledge_base = _load_api()
         self.kb = knowledge_base()
         self.prototypes = np.asarray(self.kb.arrays["prototypes"]) if self.use_trajectory else np.zeros((0, 1, 2))
+        self.prototype_speeds = None
+        self.prototype_supports = None
+        if self.use_trajectory and len(self.prototypes):
+            count = len(self.prototypes)
+            speeds = np.full(count, np.nan, dtype=np.float64)
+            supports = np.zeros(count, dtype=np.float64)
+            rows = self.kb.connection.execute("SELECT prototype_id, support_tracks, median_speed FROM prototypes")
+            for row in rows:
+                index = int(row["prototype_id"])
+                if 0 <= index < count:
+                    supports[index] = float(row["support_tracks"])
+                    if row["median_speed"] is not None:
+                        speeds[index] = float(row["median_speed"])
+            far_path = self.kb.root / "far_road_prototypes.npz"
+            if far_path.is_file():
+                far = np.load(far_path)
+                extra = np.asarray(far["prototypes"], dtype=np.float64)
+                if extra.ndim == 3 and extra.shape[1:] == self.prototypes.shape[1:]:
+                    self.prototypes = np.concatenate([self.prototypes, extra], axis=0)
+                    speeds = np.concatenate([speeds, np.asarray(far["speeds"], dtype=np.float64)])
+                    supports = np.concatenate([supports, np.asarray(far["supports"], dtype=np.float64)])
+            self.prototype_speeds = speeds
+            self.prototype_supports = supports
         self.sigma = float(self.kb.config["retrieval_sigma_m"])
 
     def adjust(self, history: np.ndarray, candidate: np.ndarray, base_weight: float, frame_gap: int) -> tuple[float, dict]:
@@ -96,6 +127,8 @@ class KnowledgePrior:
             min_points=self.min_points,
             frame_gap=frame_gap,
             cached_matches=matches if len(points) >= self.min_points else None,
+            prototype_speeds=self.prototype_speeds,
+            prototype_supports=self.prototype_supports,
         )
 
     def _delta(self, decision: dict, base_weight: float) -> float:
@@ -103,23 +136,20 @@ class KnowledgePrior:
             return 0.0
         score = float(decision.get("score") or 0.0)
         action = decision.get("action")
+        cap = min(float(self.weight), 0.12) * max(score, 0.0)
         if action == "continuation":
-            floor = 0.05 + self.weight * score
-            if base_weight < floor:
-                return float(floor - base_weight)
-            return float(self.weight * score)
+            return bounded_bonus(base_weight, cap)
         if action == "topology":
-            return float(min(self.weight, 0.1) * score)
+            if base_weight < -0.05:
+                return 0.0
+            return bounded_bonus(base_weight, min(cap, 0.10 * score))
         if action == "hold":
-            # 外观已经强烈反对时不抬权重 避免把近处的另一辆车绑进来
+            # 自身运动延续 幅度小于历史路径 负边仍然不能变成正边
             if base_weight < -0.3:
                 return 0.0
-            floor = 0.05
-            if base_weight < floor:
-                return float(floor - base_weight)
-            return 0.0
+            return bounded_bonus(base_weight, min(cap, 0.05))
         if action == "contradict":
-            return float(-self.weight * score)
+            return float(-min(float(self.weight), 0.12) * score)
         return 0.0
 
     def flush(self) -> None:
