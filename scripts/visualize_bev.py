@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -57,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-step-m", type=float, default=15.0, help="相邻点超过该距离就断开，避免远处单应把轨迹拉成直线")
     parser.add_argument("--start-frame", type=int, default=None)
     parser.add_argument("--end-frame", type=int, default=None)
+    parser.add_argument("--overlay", type=Path, default=None, help="在线记忆日志 只画真实记忆位置 不改 ID")
     return parser.parse_args()
 
 
@@ -274,6 +276,36 @@ def place_cross(bev: np.ndarray, panels: dict[str, np.ndarray], camera_width: in
     return canvas
 
 
+def load_overlay(path: Path | None) -> dict[int, list[dict]]:
+    grouped: dict[int, list[dict]] = defaultdict(list)
+    if path is None or not path.is_file():
+        return grouped
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if row.get("action") != "accept":
+            continue
+        grouped[int(row["frame"])].append(row)
+    return grouped
+
+
+def draw_memory_marks(image: np.ndarray, view, rows: list[dict]) -> None:
+    """黄点是记忆里的最后真实位置 青线是检索到的历史后续"""
+    for row in rows:
+        point = row.get("pred_xy")
+        if not point:
+            continue
+        pixel = view.to_px_int(np.asarray(point, dtype=np.float64).reshape(1, 2))[0]
+        cv2.circle(image, (int(pixel[0]), int(pixel[1])), 6, (0, 200, 255), 1, cv2.LINE_AA)
+        label = str(row.get("label", ""))
+        cv2.putText(image, label, (int(pixel[0]) + 6, int(pixel[1]) - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 200, 255), 1, cv2.LINE_AA)
+        for future in row.get("kv_future") or []:
+            pts = view.to_px_int(np.asarray(future, dtype=np.float64))
+            for start, end in zip(pts[:-1], pts[1:]):
+                cv2.line(image, tuple(int(v) for v in start), tuple(int(v) for v in end), (80, 180, 80), 1, cv2.LINE_AA)
+
+
 def render_video(
     result,
     trails,
@@ -285,6 +317,7 @@ def render_video(
     max_step_m: float,
     camera_width: int,
     camera_height: int,
+    overlay: dict[int, list[dict]] | None = None,
 ) -> None:
     fps = float(result.get("fps") or 20.0)
     window = max(1, int(round(trail_seconds * fps)))
@@ -319,6 +352,9 @@ def render_video(
                 colors[track_id] = color_for_id(track_id)
         current = {track_id: point for track_id, point in active.items()}
         labels = {track_id: str(track_id) for track_id in current}
+        if overlay:
+            # 记忆日志用的是 STMC 内部帧 比结果 frame_index 大 1
+            draw_memory_marks(image, basemap.view, overlay.get(frame_index + 1, []))
         if trail_xy or current:
             draw_trails(
                 image,
@@ -385,6 +421,7 @@ def main() -> int:
             args.max_step_m,
             args.camera_width,
             args.camera_height,
+            load_overlay(args.overlay),
         )
     else:
         image = basemap.render()

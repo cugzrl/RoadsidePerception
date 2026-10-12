@@ -69,6 +69,12 @@ class Tracker:
             from .knowledge_prior import KnowledgePrior
 
             self.knowledge = KnowledgePrior(knowledge_cfg)
+        self.motion_memory = None
+        memory_cfg = self.cfg.get("motion_memory") if hasattr(self.cfg, "get") else None
+        if memory_cfg is not None and bool(memory_cfg.get("enabled", False)):
+            from .motion_memory import MotionMemory
+
+            self.motion_memory = MotionMemory(memory_cfg)
 
     def step(self, sample):
         """
@@ -96,6 +102,7 @@ class Tracker:
         self.latency.append(t1 - t0)
 
         self._sanitize()
+        self._remember_real_observations()
         self._record_positions()
 
         rresults = self.get_result()
@@ -103,6 +110,8 @@ class Tracker:
         self.predict()
         if self.knowledge is not None:
             self.knowledge.flush()
+        if self.motion_memory is not None:
+            self.motion_memory.flush(self.frame)
 
         presults = self.get_result()
 
@@ -405,6 +414,8 @@ class Tracker:
         if self.cfg.prematching.enabled:
             adj = self._apply_prematching(adj, tracks, iou_bias)
         adj = self._apply_short_recovery(adj, tracks)
+        if self.motion_memory is not None:
+            adj = self.motion_memory.apply(adj, tracks, self.frame)
         if self.knowledge is not None:
             adj = self._apply_knowledge(adj, tracks)
 
@@ -522,6 +533,8 @@ class Tracker:
         if self.cfg.prematching.enabled:
             adj = self._apply_prematching(adj, tracks, iou_bias)
         adj = self._apply_short_recovery(adj, tracks)
+        if self.motion_memory is not None:
+            adj = self.motion_memory.apply(adj, tracks, self.frame)
         base = adj.clone()
         adj = self._finalize_adjacency_matrix(adj, -100, tracks)
         path = os.environ.get("STMC_DIAG_PATH")
@@ -675,6 +688,24 @@ class Tracker:
                 adj[left, right] = updated
                 adj[right, left] = updated
         return adj
+
+    def _remember_real_observations(self) -> None:
+        """关联完成后记下本帧真实位置 预测发生在这之后 不会记进去"""
+        if self.motion_memory is None:
+            return
+        for track in self.tracks:
+            if track.label is None or int(track.frame) != int(self.frame):
+                continue
+            positions = track.positions_3d
+            if positions.shape[-1] > 2:
+                positions = positions[..., :2]
+            masked = positions.clone()
+            masked[~track.track_where] = float("nan")
+            finite = ~torch.isnan(masked).any(dim=-1)
+            if not bool(finite.any()):
+                continue
+            point = masked[finite].mean(dim=0).detach().cpu().numpy()
+            self.motion_memory.remember(int(track.label), int(self.frame), point)
 
     def _mean_bev(self, track: SuperTrack):
         positions = track.positions_3d

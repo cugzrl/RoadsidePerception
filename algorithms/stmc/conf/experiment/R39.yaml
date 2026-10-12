@@ -40,6 +40,30 @@ tracker:
     iou_bonus: 0.60
     match_iou: 0.50
     reject_iou: 0.30
+  # 默认关闭 中断后的在线记忆 道路筛选和 Key-Value 重关联互不绑定
+  motion_memory:
+    enabled: false
+    retain_frames: 30
+    min_missed: 4
+    max_missed: 30
+    fps: 20
+    reid_min: 0.78
+    static_reid_min: 0.88
+    ambiguity_margin: 0.08
+    max_speed_mps: 22
+    cv_radius_base: 3.0
+    cv_radius_gain: 4.0
+    cv_radius_cap: 8.0
+    kv_radius_base: 3.0
+    kv_radius_gain: 3.0
+    kv_radius_cap: 8.0
+    protect_edge: 0.40
+    weight: 0.85
+    use_topology: false
+    use_kv: false
+    kv_path: null
+    lane_graph: null
+    log_path: null
   knowledge:
     enabled: false
     use_spatial: true
