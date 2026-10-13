@@ -77,6 +77,18 @@ class Tracker:
             from .motion_memory import MotionMemory
 
             self.motion_memory = MotionMemory(memory_cfg)
+        self.cross_camera = None
+        coview_cfg = self.cfg.get("cross_camera_prior") if hasattr(self.cfg, "get") else None
+        if coview_cfg is not None and bool(coview_cfg.get("enabled", False)):
+            from .cross_camera_prior import CrossCameraPrior
+
+            self.cross_camera = CrossCameraPrior(coview_cfg)
+        self.static_pseudo = None
+        pseudo_cfg = self.cfg.get("static_pseudo") if hasattr(self.cfg, "get") else None
+        if pseudo_cfg is not None and bool(pseudo_cfg.get("enabled", False)):
+            from .static_pseudo import StaticPseudo
+
+            self.static_pseudo = StaticPseudo(pseudo_cfg)
 
     def step(self, sample):
         """
@@ -116,6 +128,10 @@ class Tracker:
             self.motion_memory.flush(self.frame)
         if self.link_guard is not None and self.link_guard.get("log_path"):
             self._flush_guard(self.link_guard.get("log_path"))
+        if self.static_pseudo is not None:
+            self.static_pseudo.flush()
+        if self.cross_camera is not None:
+            self.cross_camera.flush()
 
         presults = self.get_result()
 
@@ -134,6 +150,9 @@ class Tracker:
         features = self.feature_extractor(sample)
         raw_superboxes = self._new_superboxes_from_data(sample, features)
         high_boxes, low_conf_superboxes = self._split_confidence(raw_superboxes)
+        if self.static_pseudo is not None:
+            high_boxes = self._drop_static(high_boxes)
+            low_conf_superboxes = self._drop_static(low_conf_superboxes)
         superboxes = high_boxes
 
         relevant_tracks = self.tracks + superboxes
@@ -211,12 +230,19 @@ class Tracker:
             missed = int(self.frame - track.frame)
             if missed < 1 or missed > 3:
                 continue
+            if self.static_pseudo is not None and int(getattr(track, "low_streak", 0)) >= int(self.static_pseudo.low_attach_limit):
+                continue
             for col, det in enumerate(lows):
                 if int(track.class_id) != int(det.class_id):
                     continue
                 overlap, reid = self._low_evidence(track, det)
                 if overlap < 0.45 or reid < 0.80:
                     continue
+                if self.static_pseudo is not None:
+                    ratio = self._area_ratio(track, det)
+                    if ratio is not None and (ratio < 0.45 or ratio > 2.2):
+                        self._guard_log(track, det, "low_size", float(ratio), overlap)
+                        continue
                 pairs.append((float(overlap + reid), row, col))
         pairs.sort(reverse=True)
         used_track = set()
@@ -227,12 +253,53 @@ class Tracker:
                 continue
             track = existing[row]
             track.update(lows[col])
+            if self.static_pseudo is not None:
+                track.low_streak = int(getattr(track, "low_streak", 0)) + 1
             used_track.add(row)
             used_det.add(col)
             recovered.append(track)
             self._guard_log(track, lows[col], "low_recover", float(_score), float(_score))
         still = [track for index, track in enumerate(existing) if index not in used_track]
         return matched + recovered, still + held
+
+    def _drop_static(self, boxes: List[SuperTrack]) -> List[SuperTrack]:
+        kept = []
+        for box in boxes:
+            camera, xyxy = self._finite_xyxy(box)
+            if camera is None or box.class_id is None:
+                kept.append(box)
+                continue
+            reason = self.static_pseudo.consider(int(box.class_id), camera, xyxy, frame=self.frame)
+            if reason is None:
+                kept.append(box)
+        return kept
+
+    def _finite_xyxy(self, box: SuperTrack):
+        import numpy as np
+
+        for camera in range(self.n_cams):
+            raw = box.boxes[camera]
+            if torch.isnan(raw).any():
+                continue
+            x_value, y_value, width, height = [float(value) for value in raw.detach().cpu()]
+            return camera, np.array([x_value, y_value, x_value + width, y_value + height], dtype=np.float64)
+        return None, None
+
+    def _area_ratio(self, track: SuperTrack, det: SuperTrack) -> Optional[float]:
+        for camera in range(self.n_cams):
+            if torch.isnan(det.boxes[camera]).any():
+                continue
+            source = track.last_real_boxes[camera]
+            if int(track.last_real_frame[camera]) < 0 or torch.isnan(source).any():
+                source = track.boxes[camera]
+            if torch.isnan(source).any():
+                continue
+            det_area = float(det.boxes[camera][2] * det.boxes[camera][3])
+            track_area = float(source[2] * source[3])
+            if det_area < 1 or track_area < 1:
+                continue
+            return det_area / track_area
+        return None
 
     def _low_evidence(self, track: SuperTrack, det: SuperTrack) -> tuple[float, float]:
         best_iou = -1.0
@@ -360,6 +427,8 @@ class Tracker:
             penult_track = [track for track in tracks if track.frame == penult_frame][0]
             penult_track.update(merged_track)
             merged_track = penult_track
+        if self.static_pseudo is not None and any(track.label is None for track in tracks):
+            merged_track.low_streak = 0
 
         return merged_track
 
@@ -466,6 +535,8 @@ class Tracker:
             adj = self._apply_prematching(adj, tracks, iou_bias)
         adj = self._apply_short_recovery(adj, tracks)
         adj = self._apply_link_guard(adj, tracks)
+        if self.cross_camera is not None:
+            adj = self._apply_cross_camera(adj, tracks, similarities[0], similarities[1])
         if self.motion_memory is not None:
             adj = self.motion_memory.apply(adj, tracks, self.frame)
         if self.knowledge is not None:
@@ -522,6 +593,65 @@ class Tracker:
         adj[~same_time] = combined_sim[~same_time]
         adj[lmask] = combined_sim[lmask]
 
+        return adj
+
+    def _apply_cross_camera(self, adj, tracks, appearance, position_dist):
+        """同一时刻不同相机 只抬最近且没有邻车干扰的边"""
+        from .cross_camera_prior import coview_delta
+        cameras = []
+        for track in tracks:
+            active = [cam for cam in range(self.n_cams) if bool(track.track_where[cam])]
+            cameras.append(active[0] if len(active) == 1 else None)
+        neighbors = []
+        for left, track in enumerate(tracks):
+            found = []
+            if cameras[left] is None or track.class_id is None:
+                neighbors.append(found)
+                continue
+            for right, other in enumerate(tracks):
+                if left == right or cameras[right] is None or cameras[left] == cameras[right]:
+                    continue
+                if int(track.frame) != int(other.frame) or int(track.class_id) != int(other.class_id):
+                    continue
+                distance = float(position_dist[left, right].item())
+                if distance != distance:
+                    continue
+                found.append((distance, right))
+            found.sort()
+            neighbors.append(found)
+        for left, found in enumerate(neighbors):
+            if not found:
+                continue
+            distance, right = found[0]
+            if left > right:
+                continue
+            other = neighbors[right]
+            mutual = bool(other) and other[0][1] == left
+            second = found[1][0] if len(found) > 1 else 1e9
+            if mutual and len(other) > 1:
+                second = min(second, other[1][0])
+            if not mutual:
+                second = distance
+            base = float(adj[left, right].item())
+            app = float(appearance[left, right].item())
+            if app != app:
+                app = -1.0
+            delta, reason = coview_delta(
+                distance,
+                app,
+                second,
+                base,
+                near_m=self.cross_camera.near_m,
+                appearance_min=self.cross_camera.appearance_min,
+                neighbor_gap_m=self.cross_camera.neighbor_gap_m,
+                max_delta=self.cross_camera.max_delta,
+            )
+            if delta:
+                updated = min(1.0, base + delta)
+                adj[left, right] = updated
+                adj[right, left] = updated
+                delta = updated - base
+            self.cross_camera.note(self.frame, left, right, distance, app, base, delta, reason)
         return adj
 
     def _apply_prematching(self, adj: torch.Tensor, tracks: List[SuperTrack], iou_bias: float) -> torch.Tensor:

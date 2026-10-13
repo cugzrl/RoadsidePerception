@@ -166,6 +166,39 @@ def main() -> int:
                 "tracker.low_confidence_thresh=0.30",
                 f"tracker.class_high_thresh={HIGH}",
             ]
+        elif name == "F":
+            detections, features = args.low_detections, args.low_features
+            overrides = base_flags() + [
+                "tracker.short_recovery.one_to_one=true",
+                "tracker.link_guard.enabled=true",
+                f"tracker.link_guard.log_path={output / 'link_guard.jsonl'}",
+                "tracker.low_confidence_thresh=0.30",
+                f"tracker.class_high_thresh={HIGH}",
+                "tracker.static_pseudo.enabled=true",
+                f"tracker.static_pseudo.log_path={output / 'static_pseudo.jsonl'}",
+            ]
+        elif name == "S":
+            detections, features = args.low_detections, args.low_features
+            overrides = base_flags() + [
+                "tracker.short_recovery.one_to_one=true",
+                "tracker.link_guard.enabled=true",
+                f"tracker.link_guard.log_path={output / 'link_guard.jsonl'}",
+                "tracker.low_confidence_thresh=0.30",
+                f"tracker.class_high_thresh={HIGH}",
+                "tracker.static_pseudo.enabled=true",
+                f"tracker.static_pseudo.log_path={output / 'static_pseudo.jsonl'}",
+                "tracker.cross_camera_prior.enabled=true",
+                f"tracker.cross_camera_prior.log_path={output / 'cross_camera.jsonl'}",
+            ]
+        elif name in {"M", "T", "K", "Full"}:
+            base_name = {"M": "B", "T": "C", "K": "D", "Full": "E"}[name]
+            detections, features = args.low_detections, args.low_features
+            overrides = memory_flags(base_name, output / "memory_log.jsonl") + [
+                "tracker.static_pseudo.enabled=true",
+                f"tracker.static_pseudo.log_path={output / 'static_pseudo.jsonl'}",
+                "tracker.cross_camera_prior.enabled=true",
+                f"tracker.cross_camera_prior.log_path={output / 'cross_camera.jsonl'}",
+            ]
         elif name in {"B", "C", "D", "E"}:
             detections, features = args.low_detections, args.low_features
             overrides = memory_flags(name, output / "memory_log.jsonl")

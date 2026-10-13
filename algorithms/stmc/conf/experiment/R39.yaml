@@ -51,6 +51,24 @@ tracker:
     reject_iou: 0.05
     log_path: null
   class_high_thresh: null
+  # 默认关闭 只拒绝长时间不动的矮框 例如被检成行人的交通锥
+  cross_camera_prior:
+    enabled: false
+    near_m: 4.0
+    appearance_min: 0.72
+    neighbor_gap_m: 3.0
+    max_delta: 0.06
+    log_path: null
+  static_pseudo:
+    enabled: false
+    min_hits: 40
+    max_center_std: 2.0
+    max_aspect: 1.75
+    max_height: 130.0
+    classes: [6]
+    low_attach_limit: 3
+    match_px: 12.0
+    log_path: null
   # 默认关闭 中断后的在线记忆 道路筛选和 Key-Value 重关联互不绑定
   motion_memory:
     enabled: false
