@@ -83,6 +83,7 @@ def build(config: dict, sequence_ids: list[str] | None = None, allow_holdout: bo
                 "frame": int(row["frame_index"]),
                 "x": float(projected["x"]),
                 "y": float(projected["y"]),
+                "class_name": str(row.get("class_name") or ""),
             }
         )
 
@@ -93,11 +94,31 @@ def build(config: dict, sequence_ids: list[str] | None = None, allow_holdout: bo
         for segment in split_segments(ordered, kv):
             times = np.asarray([item["time"] for item in segment], dtype=np.float64)
             xy = np.asarray([[item["x"], item["y"]] for item in segment], dtype=np.float64)
+            names = [str(item.get("class_name") or "") for item in segment]
+            counted = {}
+            for name in names:
+                if name:
+                    counted[name] = counted.get(name, 0) + 1
+            class_name = ""
+            if counted:
+                class_name = max(counted, key=counted.get)
+                if counted[class_name] < 0.8 * len(names):
+                    class_name = ""
             for window in iter_windows(times, xy, kv, config):
                 if key not in track_of:
                     track_of[key] = len(track_of)
                 lane = _lane_id(lane_cloud, owners, window["key_xy"][-1], float(kv["lane_distance_m"]))
-                rows.append({**window, "sequence_id": key[0], "camera_id": key[1], "local_track_id": key[2], "track_index": track_of[key], "lane_id": lane})
+                rows.append(
+                    {
+                        **window,
+                        "sequence_id": key[0],
+                        "camera_id": key[1],
+                        "local_track_id": key[2],
+                        "track_index": track_of[key],
+                        "lane_id": lane,
+                        "class_name": class_name,
+                    }
+                )
 
     kind_count: dict[str, int] = defaultdict(int)
     lengths = []
@@ -118,6 +139,10 @@ def build(config: dict, sequence_ids: list[str] | None = None, allow_holdout: bo
         "uses_topology_filter": False,
         "lane_id_role": "场景描述 检索不做道路硬筛选",
         "window_count": len(rows),
+        "class_count": {
+            name: sum(1 for row in rows if row.get("class_name") == name)
+            for name in sorted({row.get("class_name") or "" for row in rows})
+        },
         "independent_tracks": len(track_of),
         "kind_count": dict(kind_count),
         "source_tracks_seen": len(grouped),
@@ -142,6 +167,7 @@ def save(payload: dict, npz_path: Path, sqlite_path: Path) -> None:
     camera_id = np.empty(count, dtype=object)
     kind = np.empty(count, dtype=object)
     lane_id = np.empty(count, dtype=object)
+    class_name = np.empty(count, dtype=object)
     for index, row in enumerate(rows):
         feature[index] = row["feature"]
         end_xy[index] = row["key_xy"][-1]
@@ -156,6 +182,7 @@ def save(payload: dict, npz_path: Path, sqlite_path: Path) -> None:
         camera_id[index] = row["camera_id"]
         kind[index] = row["kind"]
         lane_id[index] = row["lane_id"]
+        class_name[index] = row.get("class_name") or ""
     npz_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(
         npz_path,
@@ -172,6 +199,7 @@ def save(payload: dict, npz_path: Path, sqlite_path: Path) -> None:
         camera_id=camera_id,
         kind=kind,
         lane_id=lane_id,
+        class_name=class_name,
         meta_json=np.array(json.dumps(meta, ensure_ascii=False)),
     )
     if sqlite_path.exists():
@@ -233,15 +261,24 @@ def save(payload: dict, npz_path: Path, sqlite_path: Path) -> None:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--name", default="kv_motion_class", help="不写 kv_motion 以免覆盖上一轮知识库")
+    args = parser.parse_args()
+    if args.name == "kv_motion":
+        raise RuntimeError("请换一个文件名 原始 kv_motion 不能覆盖")
     config = load_knowledge()
     payload = build(config)
     base = ROOT / "knowledge_base"
-    save(payload, base / "kv_motion.npz", base / "kv_motion.sqlite")
+    npz_path = base / f"{args.name}.npz"
+    sqlite_path = base / f"{args.name}.sqlite"
+    save(payload, npz_path, sqlite_path)
     report = {
         "meta": payload["meta"],
         "length_mean_s": None if not payload["lengths"] else float(np.mean(payload["lengths"])),
-        "npz": str(base / "kv_motion.npz"),
-        "sqlite": str(base / "kv_motion.sqlite"),
+        "npz": str(npz_path),
+        "sqlite": str(sqlite_path),
     }
     report_path = ROOT / "reports" / "kv_motion_quality.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)

@@ -38,13 +38,16 @@ models/license_plate/**/*.onnx
 .idea/
 .vscode/
 
-# R39_RAG原始数据软链接、统一结果和隔离清单
+# R39_RAG原始数据软链接、统一结果
 R39_RAG/data/raw/
 R39_RAG/data/normalized/
 R39_RAG/data/quarantine/
 R39_RAG/tests/
 R39_RAG/reports/
 
-# 第三方源码本地 vendoring，不入库
+# 第三方源码
 third_party/
+
+# 测试
+tests/
 

@@ -154,6 +154,31 @@ class LaneIndex:
         self._locate_cache[key] = best
         return best
 
+    def locate_typed(self, xy: np.ndarray, max_distance_m: float, allowed_types: set[str]) -> dict[str, Any] | None:
+        """只在指定道路类型里找最近点 找不到就当投影不可靠"""
+        point = np.asarray(xy, dtype=np.float64).reshape(2)
+        if len(self._cloud) == 0:
+            return None
+        distance = np.linalg.norm(self._cloud - point, axis=1)
+        order = np.argsort(distance)
+        for index in order:
+            nearest = float(distance[index])
+            if nearest > max_distance_m:
+                return None
+            lane_id = str(self._owner[index])
+            node = self.nodes[lane_id]
+            if node["type"] not in allowed_types:
+                continue
+            return {
+                "lane_id": lane_id,
+                "distance_m": nearest,
+                "heading": self._heading[index],
+                "arm": node["arm"],
+                "role": node["role"],
+                "type": node["type"],
+            }
+        return None
+
     def reachable(self, source: str, target: str, hops: int = 4) -> bool:
         key = (source, target, hops)
         if key in self._reach_cache:

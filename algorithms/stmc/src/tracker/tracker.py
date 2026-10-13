@@ -63,6 +63,8 @@ class Tracker:
         self.active_cameras_only = bool(position_cfg.get("active_cameras_only", False)) if position_cfg is not None else False
         SuperTrack.use_active_positions = self.active_cameras_only
         self.short_recovery = self.cfg.get("short_recovery") if hasattr(self.cfg, "get") else None
+        self.link_guard = self.cfg.get("link_guard") if hasattr(self.cfg, "get") else None
+        self._guard_logs: list[str] = []
         self.knowledge = None
         knowledge_cfg = self.cfg.get("knowledge") if hasattr(self.cfg, "get") else None
         if knowledge_cfg is not None and bool(knowledge_cfg.get("enabled", False)):
@@ -112,6 +114,8 @@ class Tracker:
             self.knowledge.flush()
         if self.motion_memory is not None:
             self.motion_memory.flush(self.frame)
+        if self.link_guard is not None and self.link_guard.get("log_path"):
+            self._flush_guard(self.link_guard.get("log_path"))
 
         presults = self.get_result()
 
@@ -128,24 +132,16 @@ class Tracker:
             tuple: A tuple containing matched and unmatched tracks.
         """
         features = self.feature_extractor(sample)
-        superboxes = self._new_superboxes_from_data(sample, features)
-        superboxes = [s for s in superboxes if s.confidence >= self.cfg.confidence_thresh]
+        raw_superboxes = self._new_superboxes_from_data(sample, features)
+        high_boxes, low_conf_superboxes = self._split_confidence(raw_superboxes)
+        superboxes = high_boxes
 
         relevant_tracks = self.tracks + superboxes
         _track_indices = torch.arange(len(self.tracks)).to(self.device)
         _superbox_indices = torch.arange(len(self.tracks), len(relevant_tracks)).to(self.device)
 
+        # 低分框不进第一轮图 避免把高分边挤掉后再被丢掉
         low_conf_indices = None
-
-        if self.cfg.low_confidence_thresh is not None:
-            c1 = self.cfg.low_confidence_thresh
-            c2 = self.cfg.confidence_thresh
-            low_conf_superboxes = [s for s in superboxes if c1 <= s.confidence < c2]
-
-            if len(low_conf_superboxes) > 0:
-                n_relevant = len(relevant_tracks)
-                relevant_tracks += low_conf_superboxes
-                low_conf_indices = torch.arange(n_relevant, n_relevant + len(low_conf_superboxes))
 
         if len(relevant_tracks) == 0:
             return [], []
@@ -198,9 +194,62 @@ class Tracker:
             self._write_diag(relevant_tracks, similarities, labels)
 
         matched_tracks, unmatched_tracks = self._match(relevant_tracks, labels, low_conf_indices=low_conf_indices)
+        if low_conf_superboxes:
+            matched_tracks, unmatched_tracks = self._attach_low(matched_tracks, unmatched_tracks, low_conf_superboxes)
 
         self.tracks = matched_tracks + unmatched_tracks
         return matched_tracks, unmatched_tracks
+
+    def _attach_low(self, matched, unmatched, lows):
+        """未匹配轨迹再用低分框补 1 到 3 帧 必须同类别 IoU 和外观都过线 且一对一"""
+        existing = [track for track in unmatched if track.label is not None]
+        held = [track for track in unmatched if track.label is None]
+        if not existing:
+            return matched, unmatched
+        pairs = []
+        for row, track in enumerate(existing):
+            missed = int(self.frame - track.frame)
+            if missed < 1 or missed > 3:
+                continue
+            for col, det in enumerate(lows):
+                if int(track.class_id) != int(det.class_id):
+                    continue
+                overlap, reid = self._low_evidence(track, det)
+                if overlap < 0.45 or reid < 0.80:
+                    continue
+                pairs.append((float(overlap + reid), row, col))
+        pairs.sort(reverse=True)
+        used_track = set()
+        used_det = set()
+        recovered = []
+        for _score, row, col in pairs:
+            if row in used_track or col in used_det:
+                continue
+            track = existing[row]
+            track.update(lows[col])
+            used_track.add(row)
+            used_det.add(col)
+            recovered.append(track)
+            self._guard_log(track, lows[col], "low_recover", float(_score), float(_score))
+        still = [track for index, track in enumerate(existing) if index not in used_track]
+        return matched + recovered, still + held
+
+    def _low_evidence(self, track: SuperTrack, det: SuperTrack) -> tuple[float, float]:
+        best_iou = -1.0
+        best_reid = -1.0
+        for cam in range(self.n_cams):
+            if torch.isnan(det.boxes[cam]).any() or torch.isnan(track.boxes[cam]).any():
+                continue
+            if torch.isnan(det.features[cam]).any() or torch.isnan(track.features[cam]).any():
+                continue
+            overlap = box_iou(track.tlbr[cam].view(1, 4), det.tlbr[cam].view(1, 4))
+            left = track.features[cam]
+            right = det.features[cam]
+            reid = torch.dot(left, right) / (left.norm() * right.norm()).clamp(min=1e-6)
+            if float(overlap) > best_iou:
+                best_iou = float(overlap)
+                best_reid = float(reid)
+        return best_iou, best_reid
 
     def _handle_unmatched(self, unmatched_tracks):
         """
@@ -346,6 +395,8 @@ class Tracker:
                     relevant_tracks = sorted(
                         [tracks[i] for i in track_indices if i not in low_conf_indices], key=lambda x: x.frame
                     )
+                if not relevant_tracks:
+                    continue
                 merged_track = self._merge_tracks(relevant_tracks)
                 if low_conf_indices is not None and not merged_track.is_complete():
                     relevant_low_conf_tracks = [tracks[i] for i in track_indices if i in low_conf_indices]
@@ -414,6 +465,7 @@ class Tracker:
         if self.cfg.prematching.enabled:
             adj = self._apply_prematching(adj, tracks, iou_bias)
         adj = self._apply_short_recovery(adj, tracks)
+        adj = self._apply_link_guard(adj, tracks)
         if self.motion_memory is not None:
             adj = self.motion_memory.apply(adj, tracks, self.frame)
         if self.knowledge is not None:
@@ -533,6 +585,7 @@ class Tracker:
         if self.cfg.prematching.enabled:
             adj = self._apply_prematching(adj, tracks, iou_bias)
         adj = self._apply_short_recovery(adj, tracks)
+        adj = self._apply_link_guard(adj, tracks)
         if self.motion_memory is not None:
             adj = self.motion_memory.apply(adj, tracks, self.frame)
         base = adj.clone()
@@ -627,6 +680,151 @@ class Tracker:
         position = torch.where(torch.isnan(position), fallback_position, position)
         return appearance, position
 
+    def _is_high_confidence(self, box: SuperTrack) -> bool:
+        high_map = self.cfg.get("class_high_thresh") if hasattr(self.cfg, "get") else None
+        if high_map is not None and box.class_id is not None:
+            return float(box.confidence) >= float(high_map[int(box.class_id)])
+        return float(box.confidence) >= float(self.cfg.confidence_thresh)
+
+    def _split_confidence(self, boxes: List[SuperTrack]) -> tuple[list, list]:
+        """高分框可以新建轨迹 低分框只参与关联"""
+        if self.cfg.low_confidence_thresh is None:
+            return [box for box in boxes if self._is_high_confidence(box)], []
+        floor = float(self.cfg.low_confidence_thresh)
+        high, low = [], []
+        for box in boxes:
+            if self._is_high_confidence(box):
+                high.append(box)
+            elif float(box.confidence) >= floor:
+                low.append(box)
+        return high, low
+
+    def _guard_overlaps(self, tracks: List[SuperTrack], older: list[int], current: list[int]):
+        """每个旧轨迹和当前检测在共同相机上的最大预测 IoU"""
+        import numpy as np
+
+        overlaps = np.full((len(older), len(current)), np.nan, dtype=np.float64)
+        for cam in range(self.n_cams):
+            current_pos = []
+            current_box = []
+            for col, index in enumerate(current):
+                if bool(torch.isnan(tracks[index].boxes[cam]).any()):
+                    continue
+                current_pos.append(col)
+                current_box.append(tracks[index].tlbr[cam])
+            older_pos = []
+            older_box = []
+            for row, index in enumerate(older):
+                track = tracks[index]
+                if int(track.last_real_frame[cam]) < 0:
+                    continue
+                gap = int(self.frame - int(track.last_real_frame[cam]))
+                if gap <= 0:
+                    continue
+                predicted = track.last_real_boxes[cam] + track.velocities_2d[cam] * gap
+                if bool((predicted[2] <= 0) or (predicted[3] <= 0)):
+                    predicted = track.last_real_boxes[cam]
+                boxes = [predicted]
+                if gap > 1:
+                    boxes.append(track.last_real_boxes[cam])
+                for source in boxes:
+                    predicted_tlbr = source.clone()
+                    predicted_tlbr[2] = source[0] + source[2]
+                    predicted_tlbr[3] = source[1] + source[3]
+                    older_pos.append(row)
+                    older_box.append(predicted_tlbr)
+            if not current_box or not older_box:
+                continue
+            values = box_iou(torch.stack(older_box), torch.stack(current_box)).detach().cpu().numpy()
+            for row_i, row in enumerate(older_pos):
+                for col_i, col in enumerate(current_pos):
+                    value = float(values[row_i, col_i])
+                    previous = overlaps[row, col]
+                    overlaps[row, col] = value if previous != previous else max(previous, value)
+        return overlaps
+
+    def _apply_link_guard(self, adj: torch.Tensor, tracks: List[SuperTrack]) -> torch.Tensor:
+        """近距离候选分不清时宁可断开 也不把两个目标连成同一条"""
+        cfg = self.link_guard
+        if cfg is None or not bool(cfg.get("enabled", False)):
+            return adj
+        import numpy as np
+
+        from .link_guard import competition_clear
+
+        max_gap = int(cfg.get("max_gap", 3))
+        margin = float(cfg.get("ambiguity_margin", 0.12))
+        iou_decide = float(cfg.get("iou_decide", 0.15))
+        reject_iou = float(cfg.get("reject_iou", 0.05))
+        current = [index for index, track in enumerate(tracks) if track.frame == self.frame and track.label is None]
+        older = []
+        for index, track in enumerate(tracks):
+            if track.label is None:
+                continue
+            missed = int(self.frame - track.frame) - 1
+            if 0 <= missed <= max_gap:
+                older.append(index)
+        if not current or not older:
+            return adj
+        base = adj.detach().cpu().numpy()
+        matrix = base[np.ix_(older, current)].astype(np.float64)
+        overlaps = self._guard_overlaps(tracks, older, current)
+        for row, left in enumerate(older):
+            for col, right in enumerate(current):
+                if int(tracks[left].class_id) != int(tracks[right].class_id):
+                    matrix[row, col] = 0.0
+                    continue
+                overlap = overlaps[row, col]
+                rival = np.nanmax(overlaps[:, col]) if overlaps.shape[0] else overlap
+                beaten = np.isfinite(rival) and np.isfinite(overlap) and float(rival - overlap) >= iou_decide
+                if np.isfinite(overlap) and overlap < reject_iou and matrix[row, col] > 0 and beaten:
+                    matrix[row, col] = 0.0
+                    adj[left, right] = 0
+                    adj[right, left] = 0
+                    self._guard_log(tracks[left], tracks[right], "reject_motion", float(base[left, right]), overlap)
+        filled = np.where(np.isfinite(overlaps), overlaps, -1.0)
+        compete = matrix.copy()
+        compete[~np.isfinite(overlaps)] = 0.0
+        clear = competition_clear(compete, filled, margin, iou_decide)
+        for row, left in enumerate(older):
+            for col, right in enumerate(current):
+                if not clear[row, col] or float(adj[left, right]) <= 0:
+                    continue
+                self._guard_log(tracks[left], tracks[right], "ambiguous", float(adj[left, right]), float(filled[row, col]))
+                adj[left, right] = 0
+                adj[right, left] = 0
+        return adj
+
+    def _guard_log(self, older: SuperTrack, newer: SuperTrack, action: str, weight: float, overlap: float) -> None:
+        cfg = self.link_guard
+        if cfg is None:
+            return
+        path = cfg.get("log_path")
+        if not path:
+            return
+        record = {
+            "frame": int(self.frame),
+            "action": action,
+            "older_id": None if older.label is None else int(older.label),
+            "class_id": None if newer.class_id is None else int(newer.class_id),
+            "weight": round(float(weight), 4),
+            "pred_iou": None if overlap != overlap else round(float(overlap), 4),
+        }
+        self._guard_logs.append(json.dumps(record, ensure_ascii=False) + "\n")
+        if len(self._guard_logs) >= 40:
+            self._flush_guard(path)
+
+    def _flush_guard(self, path) -> None:
+        if not self._guard_logs:
+            return
+        from pathlib import Path
+
+        target = Path(str(path))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a", encoding="utf-8") as file:
+            file.write("".join(self._guard_logs))
+        self._guard_logs.clear()
+
     def _apply_short_recovery(self, adj: torch.Tensor, tracks: List[SuperTrack]) -> torch.Tensor:
         """漏检 1 到 3 帧时 用最后真实框的预测 IoU 加分 图像对不上的近邻不加正边"""
         cfg = self.short_recovery
@@ -671,6 +869,16 @@ class Tracker:
                 best[row, older_cols] = torch.maximum(best[row, older_cols], overlap[row_i])
         best_cpu = best.detach().cpu()
         weight_cpu = adj.detach().cpu()
+        one_to_one = bool(cfg.get("one_to_one", False))
+        bonus_ok = None
+        if one_to_one:
+            import numpy as np
+
+            from .link_guard import mutual_keep
+
+            gated = best_cpu.numpy().copy()
+            gated[gated < match_iou] = -1.0
+            bonus_ok = mutual_keep(gated, float(cfg.get("one_to_one_margin", 0.08)))
         for row, left in enumerate(current_idx):
             for col, right in enumerate(older_idx):
                 value = float(best_cpu[row, col])
@@ -679,7 +887,7 @@ class Tracker:
                 base_weight = float(weight_cpu[left, right])
                 if base_weight != base_weight:
                     base_weight = 0.0
-                if value >= match_iou:
+                if value >= match_iou and (bonus_ok is None or bool(bonus_ok[row, col])):
                     updated = base_weight + bonus
                 elif value < reject_iou and base_weight > 0:
                     updated = 0.0

@@ -64,9 +64,14 @@ class MotionMemory:
         self.kv_gain = float(_cfg(cfg, "kv_radius_gain", 3.0))
         self.kv_cap = float(_cfg(cfg, "kv_radius_cap", 8.0))
         self.protect_edge = float(_cfg(cfg, "protect_edge", 0.40))
+        self.strict_protect = bool(_cfg(cfg, "strict_protect", False))
         self.weight = float(_cfg(cfg, "weight", 0.85))
         self.use_topology = bool(_cfg(cfg, "use_topology", False))
         self.use_kv = bool(_cfg(cfg, "use_kv", False))
+        self.kv_class_aware = bool(_cfg(cfg, "kv_class_aware", False))
+        self.kv_diverse = bool(_cfg(cfg, "kv_diverse", False))
+        self.kv_blend = bool(_cfg(cfg, "kv_blend", False))
+        self.class_reid_min = _cfg(cfg, "class_reid_min", None)
         self.log_path = _cfg(cfg, "log_path", None)
         self.real_history: dict[int, list[tuple[int, np.ndarray]]] = {}
         self.retrieve_s = 0.0
@@ -150,9 +155,11 @@ class MotionMemory:
         if positions.shape[-1] > 2:
             positions = positions[..., :2]
             finite = ~torch.isnan(positions).any(dim=-1)
-        if not bool(finite.any()):
+        active = finite & track.track_where
+        mask = active if bool(active.any()) else None
+        if mask is None:
             return None
-        return positions[finite].mean(dim=0).detach().cpu().numpy()
+        return positions[mask].mean(dim=0).detach().cpu().numpy()
 
     def _key_xy(self, history: list[tuple[int, np.ndarray]]) -> np.ndarray | None:
         frames = np.asarray([item[0] for item in history], dtype=np.float64)
@@ -169,23 +176,42 @@ class MotionMemory:
             axis=1,
         )
 
-    def _topology_ok(self, origin: np.ndarray, target: np.ndarray) -> bool:
+    def _reid_need(self, class_id: int, history_speed: float) -> float:
+        if self.class_reid_min is not None:
+            values = list(self.class_reid_min)
+            if 0 <= int(class_id) < len(values) and values[int(class_id)] is not None:
+                return float(values[int(class_id)])
+        return self.static_reid_min if history_speed < 1.5 else self.reid_min
+
+    def _topology_decision(self, class_id: int, origin: np.ndarray, target: np.ndarray) -> tuple[bool, str, dict]:
+        """行人不套机动车车道 投影不可靠时不拒绝"""
+        info = {"class_id": int(class_id), "from": None, "to": None}
         if self.lanes is None:
-            return False
-        left = self.lanes.locate(origin, 8.0)
-        right = self.lanes.locate(target, 8.0)
+            return True, "没有道路图", info
+        if int(class_id) == 6:
+            return True, "行人不用机动车拓扑", info
+        allowed = {"bike_lane", "connector"} if int(class_id) in (3, 4, 5) else {"vehicle_lane", "connector"}
+        info["allowed"] = sorted(allowed)
+        left = self.lanes.locate_typed(origin, 8.0, allowed)
+        right = self.lanes.locate_typed(target, 8.0, allowed)
+        info["from"] = None if left is None else left["lane_id"]
+        info["to"] = None if right is None else right["lane_id"]
         if left is None or right is None:
-            return False
-        if not self.lanes.reachable(left["lane_id"], right["lane_id"], hops=6):
-            if not self.lanes.reachable(right["lane_id"], left["lane_id"], hops=6):
-                return False
+            return True, "不在该类道路附近 不用拓扑硬拒绝", info
+        connected = self.lanes.reachable(left["lane_id"], right["lane_id"], hops=6) or self.lanes.reachable(
+            right["lane_id"], left["lane_id"], hops=6
+        )
+        info["connected"] = connected
+        if not connected:
+            return False, "道路区域不连通", info
         step = target - origin
         if float(np.linalg.norm(step)) > 1.0:
             heading = left["heading"]
             cosine = float(np.dot(step, heading) / (np.linalg.norm(step) * max(np.linalg.norm(heading), 1e-6)))
+            info["heading_cos"] = round(cosine, 3)
             if cosine < -0.2:
-                return False
-        return True
+                return False, "位移与车道方向相反", info
+        return True, "道路连通", info
 
     def apply(self, adj: torch.Tensor, tracks: list, frame: int, labels_alive: set[int] | None = None) -> torch.Tensor:
         if not self.enabled:
@@ -205,14 +231,18 @@ class MotionMemory:
         weight_cpu = adj.detach().cpu()
         protected = []
         for left in current:
-            best = 0.0
+            recent = []
             for right, track in enumerate(tracks):
                 if track.label is None:
                     continue
                 missed = int(frame - track.frame) - 1
                 if missed < self.min_missed:
-                    best = max(best, float(weight_cpu[left, right]))
-            protected.append(best >= self.protect_edge)
+                    recent.append(float(weight_cpu[left, right]))
+            recent.sort(reverse=True)
+            best = recent[0] if recent else 0.0
+            second = recent[1] if len(recent) > 1 else -1.0
+            stable = best >= self.protect_edge and (not self.strict_protect or best - second >= self.ambiguity_margin)
+            protected.append(stable)
         det_feat = [self._feature(tracks[index]) for index in current]
         det_xy = [self._position(tracks[index]) for index in current]
         old_feat = [self._feature(tracks[index]) for index in older]
@@ -244,7 +274,7 @@ class MotionMemory:
                     continue
                 span_frames = max(history[-1][0] - history[0][0], 1)
                 history_speed = float(np.linalg.norm(history[-1][1] - history[0][1])) / (span_frames / self.fps)
-                reid_need = self.static_reid_min if history_speed < 1.5 else self.reid_min
+                reid_need = self._reid_need(int(track.class_id), history_speed)
                 if history_speed < 1.5 and step_m > 4.0:
                     continue
                 reid = float(np.dot(old_feat[row], det_feat[col]))
@@ -261,7 +291,23 @@ class MotionMemory:
                     if cache_key not in kv_cache:
                         query_key = self._key_xy(history)
                         retrieve_started = time.perf_counter()
-                        kv_cache[cache_key] = None if query_key is None else self.index.query(query_key)
+                        query_class = None
+                        if self.kv_class_aware:
+                            names = {
+                                0: "Car",
+                                1: "Van",
+                                2: "Bus",
+                                3: "Tricycle",
+                                4: "ScooterRider",
+                                5: "Cyclist",
+                                6: "Pedestrian",
+                            }
+                            query_class = names.get(int(track.class_id))
+                        kv_cache[cache_key] = (
+                            None
+                            if query_key is None
+                            else self.index.query(query_key, class_name=query_class, diverse=self.kv_diverse)
+                        )
                         self.retrieve_s += time.perf_counter() - retrieve_started
                         cached = kv_cache[cache_key]
                         if cached is not None and cached.get("reliable"):
@@ -270,38 +316,82 @@ class MotionMemory:
                             self.fallbacks += 1
                     found = kv_cache[cache_key]
                     if found is not None and found.get("reliable"):
-                        points = [
-                            self.future_at_time(item["future_xy"], dt) for item in found["matches"]
-                        ]
-                        dist = min(float(np.linalg.norm(det_xy[col] - point)) for point in points)
-                        radius = min(self.kv_cap, self.kv_base + self.kv_gain * dt)
-                        mode = "kv"
+                        points = [self.future_at_time(item["future_xy"], dt) for item in found["matches"]]
+                        kv_dist = min(float(np.linalg.norm(det_xy[col] - point)) for point in points)
+                        spread = 0.0
+                        if len(points) >= 2:
+                            stacked = np.stack(points, axis=0)
+                            spread = float(np.max(np.linalg.norm(stacked[:, None, :] - stacked[None, :, :], axis=-1)))
+                        support = len({item["track_index"] for item in found["matches"]})
                         kv_score = found["best_score"]
                         kv_source = {
                             "sequence_id": found["matches"][0]["sequence_id"],
                             "camera_id": found["matches"][0]["camera_id"],
                             "local_track_id": found["matches"][0]["local_track_id"],
                             "kind": found["matches"][0]["kind"],
-                            "support_tracks": len({item["track_index"] for item in found["matches"]}),
+                            "support_tracks": support,
+                            "spread_m": round(spread, 3),
+                            "reason": found.get("reason"),
+                            "futures": [np.asarray(item["future_xy"]).round(3).tolist() for item in found["matches"][:5]],
                         }
+                        if not self.kv_blend:
+                            dist = kv_dist
+                            radius = min(self.kv_cap, self.kv_base + self.kv_gain * dt)
+                            mode = "kv"
+                        else:
+                            mode = "kv_pending"
+                            kv_source["kv_dist"] = round(kv_dist, 3)
                     else:
                         mode = "fallback_memory"
-                if mode != "kv":
-                    frames = [item[0] for item in history]
-                    delta_f = frames[-1] - frames[-2]
-                    if delta_f <= 0:
-                        continue
-                    velocity = (history[-1][1] - history[-2][1]) / (delta_f / self.fps)
-                    predicted = history[-1][1] + velocity * dt
-                    dist = float(np.linalg.norm(det_xy[col] - predicted))
+                        if found is not None:
+                            kv_source = {"reason": found.get("reason"), "support_tracks": found.get("support_tracks", 0)}
+                frames = [item[0] for item in history]
+                delta_f = frames[-1] - frames[-2]
+                if delta_f <= 0:
+                    continue
+                velocity = (history[-1][1] - history[-2][1]) / (delta_f / self.fps)
+                predicted = history[-1][1] + velocity * dt
+                cv_dist = float(np.linalg.norm(det_xy[col] - predicted))
+                if mode == "kv_pending":
+                    kv_dist = float(kv_source["kv_dist"])
+                    support = int(kv_source["support_tracks"])
+                    spread = float(kv_source["spread_m"])
+                    reliable_kv = support >= 2 and spread <= 6.0 and kv_score is not None and kv_score >= 0.30
+                    if reliable_kv and kv_dist + 1.5 < cv_dist and reid >= reid_need + 0.04:
+                        dist = kv_dist
+                        radius = min(self.kv_cap, self.kv_base + self.kv_gain * dt)
+                        mode = "kv"
+                    else:
+                        dist = cv_dist
+                        mode = "blend_memory"
+                elif mode != "kv":
+                    dist = cv_dist
                 if history_speed < 1.5:
                     radius = min(radius, 3.0)
                 if dist is None or dist > radius:
                     continue
+                topology_reason = None
                 if self.use_topology:
-                    if not self._topology_ok(origin, det_xy[col]):
+                    allowed, topology_reason, topology_info = self._topology_decision(int(track.class_id), origin, det_xy[col])
+                    if not allowed:
+                        self._log(
+                            frame,
+                            {
+                                "label": int(track.label),
+                                "mode": "topology_reject",
+                                "reid": reid,
+                                "dist": dist if dist is not None else -1,
+                                "score": 0.0,
+                                "dt": dt,
+                                "kv_score": kv_score,
+                                "kv_source": {"reason": topology_reason, "lanes": topology_info},
+                                "uses_topology": True,
+                                "pred_xy": origin.tolist(),
+                            },
+                            "reject",
+                        )
                         continue
-                    uses_topology = True
+                    uses_topology = topology_reason == "道路连通"
                 score = reid * float(np.exp(-dist / 4.0))
                 pairs.append(
                     {
@@ -386,5 +476,6 @@ class MotionMemory:
             "kv_source": item["kv_source"],
             "uses_topology_filter": bool(item["uses_topology"]),
             "pred_xy": item["pred_xy"],
+            "kv_future": None if not item.get("kv_source") else item["kv_source"].get("futures"),
         }
         self._log_lines.append(json.dumps(record, ensure_ascii=False) + "\n")

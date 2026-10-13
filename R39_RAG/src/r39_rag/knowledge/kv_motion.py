@@ -206,6 +206,9 @@ class KVIndex:
         self.local_track_id = np.asarray(arrays["local_track_id"], dtype=np.int32)
         self.kind = [str(item) for item in arrays["kind"].tolist()]
         self.lane_id = [str(item) for item in arrays["lane_id"].tolist()]
+        self.class_name = None
+        if "class_name" in arrays:
+            self.class_name = [str(item) for item in arrays["class_name"].tolist()]
         self.uses_topology_filter = bool(meta.get("uses_topology_filter", False))
 
     @classmethod
@@ -225,7 +228,14 @@ class KVIndex:
             meta = json.loads(str(arrays["meta_json"]))
         return cls(arrays, meta)
 
-    def query(self, key_xy: np.ndarray, top_k: int | None = None, min_score: float | None = None) -> dict[str, Any]:
+    def query(
+        self,
+        key_xy: np.ndarray,
+        top_k: int | None = None,
+        min_score: float | None = None,
+        class_name: str | None = None,
+        diverse: bool = False,
+    ) -> dict[str, Any]:
         key_xy = np.asarray(key_xy, dtype=np.float64)
         if key_xy.shape != (KEY_SAMPLES, 2) or len(self.feature) == 0:
             return {"reliable": False, "reason": "查询片段不完整", "matches": []}
@@ -238,13 +248,43 @@ class KVIndex:
         offset = self.end_xy - key_xy[-1]
         position = np.linalg.norm(offset, axis=1)
         chosen = np.flatnonzero(position <= radius)
+        if class_name is not None:
+            if self.class_name is None:
+                return {"reliable": False, "reason": "知识库没有类别", "matches": [], "support_tracks": 0}
+            chosen = np.asarray([row for row in chosen if self.class_name[int(row)] == class_name], dtype=np.int64)
+            if len(chosen) < 3:
+                return {
+                    "reliable": False,
+                    "reason": "同类历史样本不足",
+                    "matches": [],
+                    "candidate_count": int(len(chosen)),
+                    "support_tracks": int(len({int(self.track_index[int(row)]) for row in chosen})),
+                    "class_name": class_name,
+                }
         if len(chosen) < 3:
             return {"reliable": False, "reason": "附近历史片段不足", "matches": [], "candidate_count": int(len(chosen))}
         shape = np.linalg.norm(self.feature[chosen] - encoded["feature"], axis=1)
         heading_delta = _wrap_angle(self.heading[chosen] - encoded["heading"])
         direction = 0.5 + 0.5 * np.cos(heading_delta)
         score = np.exp(-position[chosen] / 12.0) * np.exp(-shape / 3.0) * direction
-        order = np.argsort(-score)[:limit]
+        ranked = np.argsort(-score)
+        if diverse:
+            picked = []
+            seen = set()
+            for index in ranked:
+                row = int(chosen[int(index)])
+                track = int(self.track_index[row])
+                if track in seen:
+                    continue
+                seen.add(track)
+                picked.append(int(index))
+                if len(picked) >= limit:
+                    break
+            order = np.asarray(picked, dtype=np.int64)
+            if len(order) == 0:
+                return {"reliable": False, "reason": "没有独立历史轨迹", "matches": [], "support_tracks": 0}
+        else:
+            order = ranked[:limit]
         best = float(score[order[0]])
         if best < score_floor:
             return {
@@ -273,12 +313,16 @@ class KVIndex:
                     "uses_topology_filter": False,
                 }
             )
+        support_tracks = len({item["track_index"] for item in matches})
         return {
             "reliable": True,
             "reason": "命中历史运动片段",
             "matches": matches,
             "best_score": best,
             "candidate_count": int(len(chosen)),
+            "support_tracks": support_tracks,
+            "class_name": class_name,
+            "diverse": bool(diverse),
             "uses_topology_filter": False,
             "query_heading": encoded["heading"],
             "query_speed": encoded["speed"],

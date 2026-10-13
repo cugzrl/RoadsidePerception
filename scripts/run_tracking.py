@@ -246,7 +246,7 @@ def main() -> int:
     result = associate_tracks(
         detection_data, load_json(raw_path), args.iou_threshold
     )
-    result["feature_provider"] = "resnet50"
+    result["feature_provider"] = metadata.get("provider", "resnet50")
     save_json(output_dir / "tracking.json", result)
     print(f"跟踪结果已写入{output_dir / 'tracking.json'}")
     return 0

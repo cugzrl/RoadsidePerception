@@ -31,6 +31,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=ROOT / "models/reid/resnet50-0676ba61.pth",
     )
+    parser.add_argument("--provider", choices=("resnet50", "mot20"), default="resnet50")
+    parser.add_argument(
+        "--mot-weights",
+        type=Path,
+        default=ROOT / "models/reid/tbdq_reid_mot20.pth",
+    )
     return parser.parse_args()
 
 
@@ -112,7 +118,33 @@ def main() -> int:
         raise ValueError("批大小和裁剪扩边参数无效")
     detection_data = load_json(args.detections.resolve())
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    encode, feature_dim = load_resnet(args.resnet_weights.resolve(), device)
+    if args.provider == "resnet50":
+        encode, feature_dim = load_resnet(args.resnet_weights.resolve(), device)
+        provider_meta = {
+            "provider": "resnet50",
+            "weights": str(args.resnet_weights.resolve()),
+            "source": "torchvision ImageNet IMAGENET1K_V1 分类预训练",
+            "input": "Resize 256 再 CenterCrop 224",
+            "normalized": True,
+        }
+    else:
+        from pipeline.reid_backbones import deepsort_batch, load_deepsort
+
+        mot_model = load_deepsort(args.mot_weights.resolve(), device)
+        feature_dim = 512
+
+        def encode(crops: list[np.ndarray]) -> torch.Tensor:
+            array = deepsort_batch(mot_model, crops, device, letterbox=False)
+            return torch.from_numpy(array).to(device)
+
+        provider_meta = {
+            "provider": "mot20",
+            "weights": str(args.mot_weights.resolve()),
+            "source": "DeepSORT 骨干 在 MOT20 行人轨迹上做身份分类 512 维",
+            "input": "检测框直接缩放到 64x128 不做 CenterCrop",
+            "normalized": True,
+            "selection": "r39_070327 核查链上 median margin 高于 ImageNet ResNet-50 和 MOT17",
+        }
     records = build_records(detection_data, args.padding)
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -139,9 +171,8 @@ def main() -> int:
         output_dir / "feature_metadata.json",
         {
             "scene_id": detection_data["scene_id"],
-            "provider": "resnet50",
+            **provider_meta,
             "feature_dim": feature_dim,
-            "normalized": True,
             "feature_count": len(records),
             "feature_matrix": "features.npy",
             "records": records,
