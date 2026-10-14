@@ -26,24 +26,33 @@ from r39_rag.projection.homography import load_projectors  # noqa: E402
 from r39_rag.projection.quality import project_observation  # noqa: E402
 
 
-def _accept_point(projected: dict, kv: dict, lane_cloud: np.ndarray | None) -> dict | None:
+def _projection_reject_reason(projected: dict, kv: dict, lane_cloud: np.ndarray | None) -> str | None:
+    """返回拒绝原因 返回空表示这一点可以进入轨迹"""
     if projected.get("reassigned"):
-        return None
+        return "reassigned_id"
     status = projected["status"]
     x_value, y_value = projected.get("x"), projected.get("y")
     if x_value is None or y_value is None:
-        return None
+        return "missing_xy"
     if status == "ok":
-        return projected
+        return None
     if status != "out_of_bounds":
-        return None
+        return f"projection_{status}"
     if max(abs(float(x_value)), abs(float(y_value))) > float(kv["max_abs_m"]):
-        return None
+        return "beyond_max_abs"
     if lane_cloud is None or len(lane_cloud) == 0:
-        return None
+        return "no_lane_cloud"
     distance = float(np.linalg.norm(lane_cloud - np.array([x_value, y_value]), axis=1).min())
     if distance > float(kv["lane_distance_m"]):
+        return "far_from_lane"
+    return None
+
+
+def _accept_point(projected: dict, kv: dict, lane_cloud: np.ndarray | None) -> dict | None:
+    if _projection_reject_reason(projected, kv, lane_cloud) is not None:
         return None
+    if projected["status"] == "ok":
+        return projected
     accepted = dict(projected)
     accepted["status"] = "ok"
     return accepted
@@ -69,13 +78,22 @@ def build(config: dict, sequence_ids: list[str] | None = None, allow_holdout: bo
     lane_cloud = graph._cloud
     owners = graph._owner
     grouped: dict[tuple, list] = defaultdict(list)
+    filter_counts: dict[str, int] = defaultdict(int)
     for row in iter_observations(sequence_ids):
+        filter_counts["observations"] += 1
         local_id = row.get("local_track_id")
         projector = projectors.get(row["camera_id"])
         if local_id is None or projector is None or row.get("timestamp_ms") is None:
+            filter_counts["no_local_or_time"] += 1
             continue
-        projected = _accept_point(project_observation(row, projector, config), kv, lane_cloud)
+        projected_raw = project_observation(row, projector, config)
+        reason = _projection_reject_reason(projected_raw, kv, lane_cloud)
+        if reason is not None:
+            filter_counts[reason] += 1
+            continue
+        projected = _accept_point(projected_raw, kv, lane_cloud)
         if projected is None:
+            filter_counts["unknown_reject"] += 1
             continue
         grouped[(row["sequence_id"], row["camera_id"], int(local_id))].append(
             {
@@ -92,6 +110,7 @@ def build(config: dict, sequence_ids: list[str] | None = None, allow_holdout: bo
     for key, points in grouped.items():
         ordered = sorted(points, key=lambda item: (item["time"], item["frame"]))
         for segment in split_segments(ordered, kv):
+            filter_counts["segments"] += 1
             times = np.asarray([item["time"] for item in segment], dtype=np.float64)
             xy = np.asarray([[item["x"], item["y"]] for item in segment], dtype=np.float64)
             names = [str(item.get("class_name") or "") for item in segment]
@@ -104,7 +123,10 @@ def build(config: dict, sequence_ids: list[str] | None = None, allow_holdout: bo
                 class_name = max(counted, key=counted.get)
                 if counted[class_name] < 0.8 * len(names):
                     class_name = ""
-            for window in iter_windows(times, xy, kv, config):
+            windows = iter_windows(times, xy, kv, config)
+            if not windows:
+                filter_counts["segments_without_full_window"] += 1
+            for window in windows:
                 if key not in track_of:
                     track_of[key] = len(track_of)
                 lane = _lane_id(lane_cloud, owners, window["key_xy"][-1], float(kv["lane_distance_m"]))
@@ -147,7 +169,9 @@ def build(config: dict, sequence_ids: list[str] | None = None, allow_holdout: bo
         "kind_count": dict(kind_count),
         "source_tracks_seen": len(grouped),
     }
-    return {"rows": rows, "meta": meta, "lengths": lengths}
+    filter_counts["windows_kept"] = len(rows)
+    filter_counts["tracks_grouped"] = len(grouped)
+    return {"rows": rows, "meta": meta, "lengths": lengths, "filter_counts": dict(filter_counts)}
 
 
 def save(payload: dict, npz_path: Path, sqlite_path: Path) -> None:
