@@ -1,4 +1,4 @@
-"""从四段建库序列切 Key-Value 运动片段 不覆盖原知识库 不读留出序列"""
+"""从四段建库序列切分Key-Value运动片段"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from r39_rag.config import load_knowledge, load_sources  # noqa: E402
@@ -264,10 +264,10 @@ def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--name", default="kv_motion_class", help="不写 kv_motion 以免覆盖上一轮知识库")
+    parser.add_argument("--name", default="kv_motion_class", help="以免覆盖上一轮知识库")
     args = parser.parse_args()
     if args.name == "kv_motion":
-        raise RuntimeError("请换一个文件名 原始 kv_motion 不能覆盖")
+        raise RuntimeError("原始kv_motion不能覆盖")
     config = load_knowledge()
     payload = build(config)
     base = ROOT / "knowledge_base"

@@ -1,4 +1,4 @@
-"""统计轨迹长度 并按种子框跟踪各实验的身份变化 不是 IDF1"""
+"""统计轨迹长度"""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""只读盘点原始 JSON、视频和采集序列"""
+"""只读盘点原始JSON、视频和采集序列"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from r39_rag.config import PROJECT_ROOT
 from r39_rag.inventory import inspect_sources

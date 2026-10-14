@@ -1,4 +1,4 @@
-"""从四段建库序列补充车道上的远端典型路径 不改原 sqlite 和 npz"""
+"""从四段建库序列补充车道上的远端典型路径"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from r39_rag.config import PROJECT_ROOT, load_knowledge  # noqa: E402

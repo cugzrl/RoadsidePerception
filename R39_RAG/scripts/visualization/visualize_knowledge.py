@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""画出 BEV 热力图、典型路径和检索示例"""
+"""画出BEV热力图、典型路径和检索示例"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from r39_rag.config import PROJECT_ROOT, load_knowledge
 from r39_rag.knowledge.retrieval import KnowledgeBase

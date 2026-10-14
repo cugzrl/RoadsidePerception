@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from r39_rag.config import PROJECT_ROOT
 from r39_rag.knowledge.retrieval import KnowledgeBase
@@ -31,7 +31,7 @@ def _demo(knowledge: KnowledgeBase) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="查询 R39 时空知识库")
+    parser = argparse.ArgumentParser(description="查询R39时空知识库")
     sub = parser.add_subparsers(dest="command", required=True)
     spatial = sub.add_parser("spatial")
     spatial.add_argument("--x", type=float, required=True)
@@ -39,7 +39,7 @@ def main() -> None:
     spatial.add_argument("--camera", default=None)
     spatial.add_argument("--class-name", default=None)
     trajectory = sub.add_parser("trajectory")
-    trajectory.add_argument("--points", nargs="+", required=True, help="若干 x,y")
+    trajectory.add_argument("--points", nargs="+", required=True, help="若干x,y")
     trajectory.add_argument("--camera", default=None)
     sub.add_parser("demo")
     args = parser.parse_args()

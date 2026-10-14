@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""在车道级 BEV 上检查投影有效范围和跨相机误差长尾"""
+"""在车道级BEV上检查投影有效范围和跨相机误差"""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-ROOT = Path(__file__).resolve().parents[2]
-RAG_SRC = Path(__file__).resolve().parents[1] / "src"
+ROOT = Path(__file__).resolve().parents[3]
+RAG_SRC = Path(__file__).resolve().parents[2] / "src"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(RAG_SRC))
 
@@ -33,7 +33,7 @@ from r39_rag.projection.evaluate import iter_observations  # noqa: E402
 from r39_rag.projection.homography import bottom_center, load_projectors  # noqa: E402
 
 CAMERAS = ["R39_Aw_CamS", "R39_Bn_CamW", "R39_Ce_CamN", "R39_Ds_CamE"]
-RINGS = ((25.0, "路口核心 0-25 m"), (55.0, "近臂 25-55 m"), (82.0, "车道外端 55-82 m"), (1e9, "超出车道图"))
+RINGS = ((25.0, "路口核心0-25 m"), (55.0, "近臂25-55 m"), (82.0, "车道外端55-82 m"), (1e9, "超出车道图"))
 TAIL_M = 15.0
 CELL_M = 10.0
 PAIR_COLORS = {
@@ -394,8 +394,8 @@ def main() -> int:
         trust,
         [
             "可信范围  绿=高  黄=中  红=低",
-            "格子 10 m  路面内且距中心不超过 82 m",
-            "青框是知识库原先的原点 ±60 m 方框",
+            "格子10m路面内且距中心不超过82m",
+            "青框是知识库原先的原点±60m方框",
         ],
         font_path,
     )
@@ -417,20 +417,20 @@ def main() -> int:
     tail = draw_chinese(
         tail,
         [
-            "跨相机误差长尾  中点距离大于 15 m",
-            "颜色区分相机对  青框为原点 ±60 m",
+            "跨相机误差长尾  中点距离大于15m",
+            "颜色区分相机对  青框为原点±60m",
         ],
         font_path,
     )
     cv2.imwrite(str(figure_dir / "bev_longtail_map.png"), tail)
 
     lines = [
-        "# R39 车道图上的 BEV 有效范围",
+        "# R39车道图上的BEV有效范围",
         "",
         "车道图与流水线 `world_position` 使用同一套地面坐标 路口中心 "
         f"[{center[0]:.2f}, {center[1]:.2f}] 四路相机光轴都指向路口",
-        "有效路面取车道多边形外扩 2 m 车道图臂长约 82 m 超出后单应会快速放大",
-        f"长尾定义为同一全局 ID 的跨相机地面距离大于 {TAIL_M:.0f} m",
+        "有效路面取车道多边形外扩2m车道图臂长约82m超出后单应会快速放大",
+        f"长尾定义为同一全局ID的跨相机地面距离大于 {TAIL_M:.0f} m",
         "",
         "## 落点",
         "",

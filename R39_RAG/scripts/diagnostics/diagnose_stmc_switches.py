@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""从已有 STMC 结果里找远端单相机路段的轨迹碎片 不把碎片数当成 IDSW"""
+"""从已有STMC结果里找远端单相机路段的轨迹碎片"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 CENTER = np.array([-20.66, -25.71])

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""检查四路 Homography 是否落到同一地面坐标"""
+"""检查四路Homography是否落到同一地面坐标"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from r39_rag.config import PROJECT_ROOT, load_knowledge, load_sources
 from r39_rag.projection.evaluate import evaluate_sequences, write_projection_report
@@ -16,8 +16,8 @@ from r39_rag.visualization.plots import plot_camera_scatter, plot_error_hist, us
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="验证 R39 地面投影")
-    parser.add_argument("--sequence", action="append", default=[], help="只检查指定 sequence_id，可重复")
+    parser = argparse.ArgumentParser(description="验证R39地面投影")
+    parser.add_argument("--sequence", action="append", default=[], help="只检查指定sequence_id，可重复")
     args = parser.parse_args()
     config = load_knowledge()
     use_chinese_font(config["font_path"])

@@ -1,4 +1,4 @@
-"""把同一时间轴的 BEV 视频横向拼在一起 不改各栏里的 ID"""
+"""把同一时间轴的BEV视频横向拼在一起"""
 
 from __future__ import annotations
 

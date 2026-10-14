@@ -1,6 +1,4 @@
-"""在留出序列上比较匀速 典型轨迹和 Key-Value 后续位置
-
-误差相对于筛选后的参考轨迹 不是人工标注精度
+"""在留出序列上比较匀速 典型轨迹和Key-Value后续位置
 """
 
 from __future__ import annotations
@@ -12,9 +10,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "scripts" / "build"))
 
 from build_kv_knowledge import build  # noqa: E402
 from r39_rag.config import load_knowledge  # noqa: E402
