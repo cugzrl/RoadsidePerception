@@ -55,4 +55,3 @@ kv_knowledge:
   max_speed_mps: 22.0
   max_gap_seconds: 0.4
   nominal_fps: 20.0
-font_path: /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc

@@ -7,7 +7,6 @@ import json
 import sys
 from pathlib import Path
 
-import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -69,36 +68,6 @@ def _summarize(name: str, errors: np.ndarray) -> dict:
     return summary
 
 
-def _draw(path: Path, key_xy: np.ndarray, truth: np.ndarray, cv_xy: np.ndarray, kv_paths: list[np.ndarray]) -> None:
-    canvas = np.full((640, 640, 3), 28, dtype=np.uint8)
-    origin = key_xy[-1]
-    scale = 8.0
-
-    def px(points: np.ndarray) -> np.ndarray:
-        local = np.asarray(points, dtype=np.float64) - origin
-        column = 320 + local[:, 0] * scale
-        row = 320 - local[:, 1] * scale
-        return np.round(np.stack([column, row], axis=1)).astype(np.int32)
-
-    def line(points: np.ndarray, color: tuple[int, int, int], thickness: int = 2) -> None:
-        pts = px(points)
-        for start, end in zip(pts[:-1], pts[1:]):
-            cv2.line(canvas, tuple(start), tuple(end), color, thickness, cv2.LINE_AA)
-
-    for future in kv_paths:
-        line(np.vstack([origin, future]), (80, 180, 80), 1)
-    line(key_xy, (230, 230, 230), 2)
-    line(np.vstack([origin, truth]), (60, 180, 255), 2)
-    line(np.vstack([origin, cv_xy]), (180, 180, 60), 2)
-    cv2.circle(canvas, tuple(px(origin.reshape(1, 2))[0]), 4, (255, 255, 255), -1)
-    cv2.putText(canvas, "white observed", (16, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (230, 230, 230), 1, cv2.LINE_AA)
-    cv2.putText(canvas, "orange reference", (16, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (60, 180, 255), 1, cv2.LINE_AA)
-    cv2.putText(canvas, "yellow constant vel", (16, 76), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 60), 1, cv2.LINE_AA)
-    cv2.putText(canvas, "green kv topk", (16, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (80, 180, 80), 1, cv2.LINE_AA)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(path), canvas)
-
-
 def main() -> None:
     config = load_knowledge()
     index = KVIndex.load(ROOT / "knowledge_base" / "kv_motion.npz", ROOT / "knowledge_base" / "kv_motion.sqlite")
@@ -110,7 +79,6 @@ def main() -> None:
     kv_top1 = []
     kv_topk = []
     reliable = 0
-    cases = []
     for row in rows:
         truth = np.stack([row["value_xy"][VALUE_INDEX[float(seconds)]] for seconds in HORIZONS])
         cv_xy = constant_velocity(row["key_xy"], HORIZONS, 1.0)
@@ -126,30 +94,13 @@ def main() -> None:
             kv_topk.append(np.full(3, np.nan))
             continue
         reliable += 1
-        paths = []
         stacked = []
         for match in found["matches"]:
             points = np.stack([future_at_time(match["future_xy"], float(seconds)) for seconds in HORIZONS])
-            paths.append(match["future_xy"])
             stacked.append(_errors(points, truth))
         stacked_array = np.stack(stacked)
         kv_top1.append(stacked_array[0])
         kv_topk.append(stacked_array.min(axis=0))
-        cases.append(
-            {
-                "kind": row["kind"],
-                "sequence_id": row["sequence_id"],
-                "camera_id": row["camera_id"],
-                "local_track_id": row["local_track_id"],
-                "cv": float(np.mean(cv_error[-1])),
-                "kv": float(np.mean(kv_topk[-1])),
-                "key_xy": row["key_xy"],
-                "truth": truth,
-                "cv_xy": cv_xy,
-                "paths": paths,
-                "score": found["best_score"],
-            }
-        )
     report = {
         "note": "误差相对于留出序列里通过同一套过滤的参考轨迹 不是人工真值",
         "reference_windows": len(rows),
@@ -165,25 +116,6 @@ def main() -> None:
     out = ROOT / "reports"
     out.mkdir(parents=True, exist_ok=True)
     (out / "kv_retrieval_eval.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    picture_dir = out / "kv_cases"
-    if cases:
-        ordered = sorted(cases, key=lambda item: item["kv"] - item["cv"])
-        picked = []
-        for item in ordered:
-            if item["kind"] != "straight":
-                picked.append(item)
-                break
-        picked.append(ordered[0])
-        picked.append(ordered[len(ordered) // 2])
-        picked.append(ordered[-1])
-        for index, item in enumerate(picked):
-            _draw(
-                picture_dir / f"case_{index}_{item['kind']}.png",
-                item["key_xy"],
-                item["truth"],
-                item["cv_xy"],
-                item["paths"],
-            )
     print(json.dumps({key: report[key] for key in ("reference_windows", "kv_reliable_ratio", "constant_velocity", "prototype", "kv_top1", "kv_topk_min")}, ensure_ascii=False, indent=2))
 
 

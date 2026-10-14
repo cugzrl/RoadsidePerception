@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""在流水线结果末尾生成 R39 全局 BEV
-
-读取 result.json 里的 world_position 叠到车道级底图上
-写出整段轨迹静图 bev_map.png 和逐帧尾迹视频 bev.mp4
+"""生成R39全局BEV
+读取result.json里的world_position叠到车道级底图上
+写出整段轨迹图bev_map.png和逐帧尾迹视频bev.mp4
 """
 
 from __future__ import annotations
