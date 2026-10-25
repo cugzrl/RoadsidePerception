@@ -21,11 +21,10 @@ from src.utils.visualize import save_tracking_visualization
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig) -> None:
-    if cfg.device == "cpu" or not torch.cuda.is_available():
-        raise ValueError("This code runs on CUDA only. Please set device to 'cuda'.")
-    else:
-        device = torch.device(cfg.device)
-        logger.info(f"🚀 Using device: {device}")
+    device = torch.device(cfg.device)
+    if not torch.cuda.is_available():
+        raise ValueError("RAMA Multicut requires CUDA. device=cpu only moves graph construction to CPU.")
+    logger.info(f"🚀 Using device: {device}")
 
     cfg.tracker.matching.distance_weight = 1 - cfg.tracker.matching.rescale_weight
 

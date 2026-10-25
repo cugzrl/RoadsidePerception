@@ -71,6 +71,9 @@ class MotionMemory:
         self.kv_class_aware = bool(_cfg(cfg, "kv_class_aware", False))
         self.kv_diverse = bool(_cfg(cfg, "kv_diverse", False))
         self.kv_blend = bool(_cfg(cfg, "kv_blend", False))
+        self.kv_fusion = str(_cfg(cfg, "kv_fusion", "legacy"))
+        if self.kv_fusion not in {"legacy", "mixture"}:
+            raise ValueError(f"Unknown knowledge fusion: {self.kv_fusion}")
         self.class_reid_min = _cfg(cfg, "class_reid_min", None)
         self.log_path = _cfg(cfg, "log_path", None)
         self.real_history: dict[int, list[tuple[int, np.ndarray]]] = {}
@@ -316,8 +319,19 @@ class MotionMemory:
                             self.fallbacks += 1
                     found = kv_cache[cache_key]
                     if found is not None and found.get("reliable"):
-                        points = [self.future_at_time(item["future_xy"], dt) for item in found["matches"]]
+                        points = [self.future_at_time(item["future_xy"], dt, origin=origin) for item in found["matches"]]
                         kv_dist = min(float(np.linalg.norm(det_xy[col] - point)) for point in points)
+                        mixture_mass = None
+                        if self.kv_fusion == "mixture":
+                            # Weight complete retrieved futures; never average opposing turns.
+                            scores = np.asarray([item["score"] for item in found["matches"]])
+                            weights = np.exp((scores - scores.max()) / 0.15)
+                            weights /= weights.sum()
+                            distances = np.linalg.norm(np.stack(points) - det_xy[col], axis=1)
+                            sigma = max(1.0, 1.0 + dt)
+                            likelihood = float(np.sum(weights * np.exp(-0.5 * (distances / sigma) ** 2)))
+                            kv_dist = float(np.sqrt(-2 * sigma ** 2 * np.log(max(likelihood, 1e-12))))
+                            mixture_mass = float(weights[distances <= 3.0 + dt].sum())
                         spread = 0.0
                         if len(points) >= 2:
                             stacked = np.stack(points, axis=0)
@@ -331,6 +345,7 @@ class MotionMemory:
                             "kind": found["matches"][0]["kind"],
                             "support_tracks": support,
                             "spread_m": round(spread, 3),
+                            "mixture_mass": mixture_mass,
                             "reason": found.get("reason"),
                             "futures": [np.asarray(item["future_xy"]).round(3).tolist() for item in found["matches"][:5]],
                         }
@@ -357,6 +372,9 @@ class MotionMemory:
                     support = int(kv_source["support_tracks"])
                     spread = float(kv_source["spread_m"])
                     reliable_kv = support >= 2 and spread <= 6.0 and kv_score is not None and kv_score >= 0.30
+                    if self.kv_fusion == "mixture":
+                        mass = float(kv_source.get("mixture_mass") or 0.0)
+                        reliable_kv = support >= 2 and mass >= 0.55 and kv_score is not None and kv_score >= 0.30
                     if reliable_kv and kv_dist + 1.5 < cv_dist and reid >= reid_need + 0.04:
                         dist = kv_dist
                         radius = min(self.kv_cap, self.kv_base + self.kv_gain * dt)

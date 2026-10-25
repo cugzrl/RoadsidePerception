@@ -18,10 +18,16 @@ def multicut(edge_index, edge_weights, opts):
     """
     if (edge_index[0] > edge_index[1]).any():
         raise ValueError("Solver expects u < v for each edge (u, v) in the graph.")
-    if edge_index.device.index is None:
-        raise ValueError("Solver runs on CUDA device only. Please move data to CUDA.")
+    original_device = edge_index.device
+    # RAMA remains on CUDA, while small association graphs may be built on CPU.
+    # Transfer once per solve instead of synchronizing every scalar graph update.
+    if edge_index.device.type == "cpu":
+        if not torch.cuda.is_available():
+            raise ValueError("RAMA Multicut requires CUDA, including CPU graph mode.")
+        edge_index = edge_index.to("cuda")
+        edge_weights = edge_weights.to("cuda")
     if edge_index.shape[1] == 0:
-        return torch.empty(0).to("cuda")
+        return torch.empty(0, dtype=torch.int32, device=original_device)
     i = edge_index[0].to(torch.int32)
     j = edge_index[1].to(torch.int32)
     costs = edge_weights.to(torch.float32)
@@ -38,7 +44,7 @@ def multicut(edge_index, edge_weights, opts):
         i.device.index,
         opts,
     )
-    return node_labels
+    return node_labels.to(original_device)
 
 
 def scale_weights(weights, threshold=0.7):

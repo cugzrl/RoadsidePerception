@@ -94,6 +94,8 @@ tracker:
     kv_class_aware: false
     kv_diverse: false
     kv_blend: false
+    # Mixture likelihood preserves separate future modes; legacy keeps old behavior.
+    kv_fusion: legacy
     class_reid_min: null
     kv_path: null
     lane_graph: null

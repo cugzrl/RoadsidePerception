@@ -30,3 +30,7 @@
 5. `knowledge/kv_motion.py`：1 秒历史对应之后 2 秒运动
 6. `knowledge/retrieval.py`、`knowledge/online.py`：检索结果如何变成关联里的有界修正
 7. `algorithms/stmc/src/tracker/knowledge_prior.py`、`motion_memory.py`：上述结果在单阶段图关联中的调用位置
+
+## 编码检索与跟踪量化评估（2026-10-25）
+
+新增历史Transformer、场景MLP、FAISS编码库和多候选似然融合。新增TrackEval评估器，用两个留出序列的结构化结果作为伪真值，比较相同检测下的STMC和编码KV

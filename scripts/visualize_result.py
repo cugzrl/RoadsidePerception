@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import subprocess
 import sys
 from pathlib import Path
 
@@ -20,6 +21,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="生成全局跟踪四宫格视频")
     parser.add_argument("--result", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--compare-result", type=Path, default=None,
+                        help="Optional second result; each camera cell compares the two methods")
+    parser.add_argument("--left-label", default="STMC")
+    parser.add_argument("--right-label", default="STMC-RAG")
     parser.add_argument("--cell-width", type=int, default=960)
     parser.add_argument("--cell-height", type=int, default=540)
     parser.add_argument("--label-font-size", type=int, default=20)
@@ -40,13 +45,18 @@ def draw_frame(
     width: int,
     height: int,
     box_width: int,
+    prepared=None,
 ) -> np.ndarray:
-    image = cv2.imread(frame["image_path"])
-    if image is None:
-        raise FileNotFoundError(f"图片读取失败{frame['image_path']}")
-    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    source_height, source_width = rgb.shape[:2]
-    canvas = Image.fromarray(rgb).resize((width, height), Image.Resampling.LANCZOS)
+    if prepared is None:
+        image = cv2.imread(frame["image_path"])
+        if image is None:
+            raise FileNotFoundError(f"图片读取失败{frame['image_path']}")
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        source_height, source_width = rgb.shape[:2]
+        canvas = Image.fromarray(rgb).resize((width, height), Image.Resampling.LANCZOS)
+    else:
+        background, source_width, source_height = prepared
+        canvas = background.copy()
     draw = ImageDraw.Draw(canvas)
     scale_x = width / source_width
     scale_y = height / source_height
@@ -94,9 +104,85 @@ def draw_frame(
     return cv2.cvtColor(np.asarray(canvas), cv2.COLOR_RGB2BGR)
 
 
+def render_comparison(args, left: dict, right: dict) -> None:
+    """Keep four camera quadrants; compare methods inside each quadrant."""
+    cameras=[camera['camera_id'] for camera in left['cameras']]
+    if len(cameras)!=4 or cameras!=[camera['camera_id'] for camera in right['cameras']]:
+        raise ValueError('Comparison requires the same ordered four cameras')
+    if left['fps']!=right['fps']:
+        raise ValueError('Comparison FPS differs')
+    records=[{(f['camera_id'],f['frame_index']):f for f in result['frames']} for result in [left,right]]
+    count=max(camera['frame_count'] for camera in left['cameras'])
+    expected={(camera,t) for camera in cameras for t in range(count)}
+    if any(set(index)!=expected for index in records):
+        raise ValueError('Comparison frame coverage differs')
+    label_font=ImageFont.truetype(str(args.font.resolve()),args.label_font_size)
+    camera_font=ImageFont.truetype(str(args.font.resolve()),args.camera_font_size)
+    header=36
+    width,height=args.cell_width*4,(args.cell_height+header)*2
+    output=args.output.resolve()
+    output.parent.mkdir(parents=True,exist_ok=True)
+    temporary=output.with_name(output.stem+'.partial.mp4')
+    command=['ffmpeg','-hide_banner','-loglevel','error','-y','-f','rawvideo','-pix_fmt','bgr24',
+             '-s',f'{width}x{height}','-r',str(left['fps']),'-i','pipe:0','-an','-c:v','libx264',
+             '-threads','4','-preset','fast','-crf','20','-pix_fmt','yuv420p','-movflags','+faststart',str(temporary)]
+    process=subprocess.Popen(command,stdin=subprocess.PIPE)
+    try:
+        for t in range(count):
+            tiles=[]
+            for camera in cameras:
+                key=(camera,t)
+                a,b=records[0][key],records[1][key]
+                if a['image_path']!=b['image_path']:
+                    raise ValueError('Comparison image paths differ')
+                common=lambda frame:[(d['detection_id'],d['class_id'],d['bbox_xyxy']) for d in frame['detections']]
+                if common(a)!=common(b):
+                    raise ValueError('Comparison detector inputs differ')
+                image=cv2.imread(a['image_path'])
+                if image is None:
+                    raise FileNotFoundError(a['image_path'])
+                rgb=cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
+                sh,sw=rgb.shape[:2]
+                prepared=(Image.fromarray(rgb).resize((args.cell_width,args.cell_height),Image.Resampling.LANCZOS),sw,sh)
+                panels=[draw_frame(f,label_font,camera_font,args.cell_width,args.cell_height,args.box_width,prepared)
+                        for f in [a,b]]
+                tile=np.full((args.cell_height+header,args.cell_width*2,3),20,np.uint8)
+                tile[header:]=np.hstack(panels)
+                for side,name in enumerate([args.left_label,args.right_label]):
+                    text=f'{name} | frame {t:04d} | {t/left["fps"]:05.2f}s'
+                    cv2.putText(tile,text,(side*args.cell_width+12,25),cv2.FONT_HERSHEY_SIMPLEX,
+                                .65,(245,245,245),1,cv2.LINE_AA)
+                cv2.line(tile,(args.cell_width,0),(args.cell_width,tile.shape[0]-1),(220,220,220),2)
+                tiles.append(tile)
+            canvas=np.vstack([np.hstack(tiles[:2]),np.hstack(tiles[2:])])
+            process.stdin.write(canvas.tobytes())
+            if (t+1)%200==0:
+                print(f'对比可视化进度 {t+1}/{count}',flush=True)
+        process.stdin.close()
+        if process.wait()!=0:
+            raise RuntimeError('Comparison video encoding failed')
+    except BaseException:
+        process.kill()
+        process.wait()
+        temporary.unlink(missing_ok=True)
+        raise
+    capture=cv2.VideoCapture(str(temporary))
+    actual=int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps=capture.get(cv2.CAP_PROP_FPS)
+    ok,first=capture.read()
+    capture.release()
+    if not ok or actual!=count or abs(fps-left['fps'])>.01 or first.shape[:2]!=(height,width):
+        raise RuntimeError('Comparison video validation failed')
+    temporary.replace(output)
+    print(f'四宫格对比视频已写入 {output}，{actual} 帧，{fps:g} FPS',flush=True)
+
+
 def main() -> int:
     args = parse_args()
     data = load_json(args.result.resolve())
+    if args.compare_result is not None:
+        render_comparison(args,data,load_json(args.compare_result.resolve()))
+        return 0
     cameras = [camera["camera_id"] for camera in data["cameras"]]
     frames = {(item["camera_id"], item["frame_index"]): item for item in data["frames"]}
     frame_count = max(camera["frame_count"] for camera in data["cameras"])

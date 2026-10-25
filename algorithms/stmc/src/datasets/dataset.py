@@ -233,9 +233,8 @@ class MultiCamDataset:
         else:
             self._norm_factors = None
 
-        self._annotations.to("cuda")
-        self._positions_2d.to("cuda")
-        self._positions_3d.to("cuda")
+        # Tracker.step moves each batch to its configured device. Unassigned
+        # Tensor.to calls only allocate and discard copies, forcing CUDA here.
 
     def get_bev_ticks(self):
         return [

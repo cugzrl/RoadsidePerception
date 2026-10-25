@@ -226,6 +226,10 @@ class KVIndex:
                 meta = json.loads(row[0])
         if not meta and "meta_json" in arrays:
             meta = json.loads(str(arrays["meta_json"]))
+        if meta.get("retrieval_type") == "encoded_faiss_v1":
+            from r39_rag.knowledge.embedding import EmbeddingKVIndex
+
+            return EmbeddingKVIndex.load(npz_path)
         return cls(arrays, meta)
 
     def query(
@@ -329,11 +333,12 @@ class KVIndex:
         }
 
 
-def future_at_time(future_xy: np.ndarray, seconds: float) -> np.ndarray:
+def future_at_time(future_xy: np.ndarray, seconds: float, origin: np.ndarray | None = None) -> np.ndarray:
     """Value 存在 0.5 1.0 1.5 2.0 秒 中间时刻在相邻真实点之间插值"""
     grid = np.concatenate([[0.0], VALUE_OFFSETS])
-    origin = np.zeros((1, 2), dtype=np.float64)
-    points = np.vstack([origin, np.asarray(future_xy, dtype=np.float64)])
+    # Relative values default to zero; absolute world paths need their real origin.
+    start = np.zeros((1, 2), dtype=np.float64) if origin is None else np.asarray(origin, dtype=np.float64).reshape(1, 2)
+    points = np.vstack([start, np.asarray(future_xy, dtype=np.float64)])
     if seconds <= 0:
         return points[0]
     if seconds >= float(grid[-1]):
