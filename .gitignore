@@ -53,7 +53,7 @@ tests/
 docs/
 
 .rag_deps/
-R39_RAG/scripts/build/
+!R39_RAG/scripts/build/
 R39_RAG/scripts/build/*
 !R39_RAG/scripts/build/train_motion_encoder.py
 
